@@ -12,7 +12,10 @@ import {
 import type { ReportSummary } from './types';
 
 function markdownCell(text: string): string {
-  return text.replace(/\|/g, '\\|').replace(/\s*\n\s*/g, ' ');
+  return text
+    .replace(/[\\`*_{}[\]()#+!<>@~]/g, '\\$&')
+    .replace(/\|/g, '\\|')
+    .replace(/\s*\n\s*/g, ' ');
 }
 
 const MARKDOWN_ROW_LIMIT = 50;

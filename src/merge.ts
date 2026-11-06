@@ -4,6 +4,7 @@ import { computePassRate } from './format';
 import { attachRunHistory, createHistoryLoader } from './history';
 import { packageVersion } from './html/assets';
 import { needsHistory, writeReportOutputs, type ReportFiles } from './output';
+import { applyRedaction } from './redact';
 import { capEmbeddedVideos } from './summary';
 import { DEFAULT_REPORTS_DIR, MERGE_OUTPUTS, SCHEMA_VERSION, STEPS_FILE_NAME, type MergeOptions, type ReportSummary } from './types';
 import { validateOptions } from './validate';
@@ -22,10 +23,33 @@ function findReportJsonFiles(dir: string): string[] {
   });
 }
 
+const THEMES = ['auto', 'light', 'dark'];
+const TEST_STATES = ['passed', 'flaky', 'failed', 'pending', 'skipped'];
+const isNumber = (value: unknown) => typeof value === 'number';
+
+function hasValidFields(data: ReportSummary): boolean {
+  return (
+    (data.theme === undefined || THEMES.includes(data.theme)) &&
+    [data.totalPassed, data.totalFailed, data.totalPending, data.totalSkipped, data.totalDurationMs].every(isNumber) &&
+    data.specs.every(
+      spec =>
+        Array.isArray(spec.tests) &&
+        [spec.duration, spec.passes, spec.failures, spec.pending, spec.skipped, spec.total].every(isNumber) &&
+        spec.tests.every(
+          test => TEST_STATES.includes(test.state) && isNumber(test.duration) && (test.network ?? []).every(request => isNumber(request.status))
+        )
+    )
+  );
+}
+
 function readReportJson(filePath: string): ReportSummary | null {
   try {
     const data = JSON.parse(readFileSync(filePath, 'utf-8')) as ReportSummary;
     if (!data || !Array.isArray(data.specs) || typeof data.totalTests !== 'number') return null;
+    if (!hasValidFields(data)) {
+      console.warn(`[neo-reporter] Skipping report file ${filePath}: unexpected field values`);
+      return null;
+    }
     if (!data.mergedFrom && data.schemaVersion !== SCHEMA_VERSION) {
       console.warn(`[neo-reporter] ${filePath} uses report schema ${data.schemaVersion ?? 'none'} (reporter ${data.reporterVersion ?? 'unknown'}), expected ${SCHEMA_VERSION}. The merged report may be incomplete.`);
     }
@@ -41,7 +65,8 @@ export async function mergeReports(options: MergeOptions = {}): Promise<MergeRes
   const reportRoot = resolve(options.reportRoot ?? DEFAULT_REPORTS_DIR);
   const summaries = (options.summaryFiles ?? findReportJsonFiles(reportRoot))
     .map(readReportJson)
-    .filter((summary): summary is ReportSummary => summary !== null && !summary.mergedFrom);
+    .filter((summary): summary is ReportSummary => summary !== null && !summary.mergedFrom)
+    .map(summary => applyRedaction(summary, options));
   if (summaries.length === 0) {
     console.warn(`[neo-reporter] No report JSON found under ${reportRoot}. Keep the 'json' output on for every run you want to merge.`);
     return null;

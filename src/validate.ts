@@ -12,6 +12,8 @@ export const KNOWN_OPTION_KEYS: string[] = [
   'outputs',
   'history',
   'reportUrl',
+  'redact',
+  'includeTestCode',
   'keepVideos',
   'reportRoot',
   'summaryFiles'

@@ -61,8 +61,20 @@ function statusIcon(state: TestData['state']): string {
 const PAYLOAD_ORDER = ['failureSteps', 'screenshots', 'videos', 'steps'] as const;
 type PayloadKind = (typeof PAYLOAD_ORDER)[number];
 
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'none'",
+  "script-src 'unsafe-inline'",
+  "style-src 'unsafe-inline'",
+  "img-src 'self' data: blob: file:",
+  "media-src 'self' data: blob:",
+  "font-src data:",
+  "connect-src 'none'",
+  "form-action 'none'",
+  "base-uri 'none'"
+].join('; ');
+
 function dataBlock(id: string, content: string): string {
-  return `<script type="application/octet-stream" id="${id}">${content}</script>`;
+  return `<script type="application/octet-stream" id="${id}">${content.replace(/</g, '\\u003c')}</script>`;
 }
 
 /** JSON inside a script tag must never contain "</script" or "<!--", so every "<" is escaped. */
@@ -116,7 +128,7 @@ export function generateHtmlReport(summary: ReportSummary): string {
       const hasFlaky = !hasFail && spec.tests.some(t => t.state === 'flaky');
       const barColor = hasFail ? 'var(--color-fail)' : hasFlaky ? 'var(--color-flaky)' : 'var(--color-pass)';
       return `
-      <div class="waterfall-row" onclick="filterBySpec('${escapeHtml(spec.specName)}')">
+      <div class="waterfall-row" data-spec="${escapeHtml(spec.specName)}" onclick="filterBySpec(this.dataset.spec)">
         <div class="waterfall-label" title="${escapeHtml(spec.specName)}">
           ${escapeHtml(spec.specName)}
         </div>
@@ -168,7 +180,7 @@ export function generateHtmlReport(summary: ReportSummary): string {
               ? `
             <div class="history-strip">
               <span class="history-strip-label">Last ${summary.history.runs.length} runs</span>
-              <span class="history-dots" data-codes="${historyCodes}" data-current="${isFail ? 'F' : t.state === 'passed' || isFlaky ? 'P' : 'S'}" data-current-label="${STATUS_LABELS[t.state]}"></span>
+              <span class="history-dots" data-codes="${escapeHtml(historyCodes)}" data-current="${isFail ? 'F' : t.state === 'passed' || isFlaky ? 'P' : 'S'}" data-current-label="${STATUS_LABELS[t.state]}"></span>
               <span class="history-strip-text">${escapeHtml(historySentence(summary, t) ?? '')}</span>
             </div>`
               : '';
@@ -571,7 +583,7 @@ export function generateHtmlReport(summary: ReportSummary): string {
       ? `<div class="panel-list">${slowestSpecs
           .map(
             spec =>
-              `<button type="button" class="panel-row" title="${escapeHtml(spec.specFile)}" onclick="filterBySpec('${escapeHtml(spec.specName)}')">${statusIcon(specState(spec))}<span class="panel-row-name">${escapeHtml(spec.specName)}</span><span class="panel-row-value">${formatDuration(spec.duration)}</span></button>`
+              `<button type="button" class="panel-row" title="${escapeHtml(spec.specFile)}" data-spec="${escapeHtml(spec.specName)}" onclick="filterBySpec(this.dataset.spec)">${statusIcon(specState(spec))}<span class="panel-row-name">${escapeHtml(spec.specName)}</span><span class="panel-row-value">${formatDuration(spec.duration)}</span></button>`
           )
           .join('')}</div>`
       : emptyState('No specs ran.'),
@@ -597,7 +609,7 @@ export function generateHtmlReport(summary: ReportSummary): string {
           .sort((a, b) => b[1].failed - a[1].failed || b[1].flaky - a[1].flaky)
           .map(
             ([owner, counts]) =>
-              `<button type="button" class="panel-row" onclick="searchAll('owner:&quot;${escapeHtml(owner.toLowerCase())}&quot;')"><span class="panel-row-name">${escapeHtml(owner)}</span><span class="panel-row-value"><span class="count-failed">${counts.failed}</span> · <span class="count-flaky">${counts.flaky}</span></span></button>`
+              `<button type="button" class="panel-row" data-owner="${escapeHtml(owner.toLowerCase())}" onclick="searchAll('owner:&quot;' + this.dataset.owner + '&quot;')"><span class="panel-row-name">${escapeHtml(owner)}</span><span class="panel-row-value"><span class="count-failed">${counts.failed}</span> · <span class="count-flaky">${counts.flaky}</span></span></button>`
           )
           .join('')}</div>`
       : emptyState(
@@ -789,6 +801,7 @@ export function generateHtmlReport(summary: ReportSummary): string {
 <html lang="en" data-theme="${theme === 'light' ? 'light' : 'dark'}" data-default-theme="${theme}">
 <head>
   <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="${CONTENT_SECURITY_POLICY}">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escapeHtml(teamName ? `${pageTitle} · ${teamName}` : pageTitle)}</title>
   <script>

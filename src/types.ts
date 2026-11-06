@@ -19,6 +19,8 @@ export interface ReporterOptions {
   outputs?: readonly ReportOutput[];
   history?: HistoryOptions | false;
   reportUrl?: string;
+  redact?: false | { patterns?: RegExp[]; replace?: (text: string) => string };
+  includeTestCode?: boolean;
   historyLoader?: HistoryLoader | null;
 }
 

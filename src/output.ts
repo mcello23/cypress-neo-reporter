@@ -4,6 +4,7 @@ import { attachRunHistory, createHistoryLoader } from './history';
 import { generateHtmlReport } from './html';
 import { generateJUnitXml } from './junit';
 import { writeMarkdownSummary } from './markdown';
+import { applyRedaction } from './redact';
 import { buildReportSummary, stripEmbed } from './summary';
 import { DEFAULT_REPORTS_DIR, REPORT_OUTPUTS, type ReporterOptions, type ReportOutput, type ReportSummary } from './types';
 
@@ -100,7 +101,7 @@ export async function generateReports(runResults: CypressCommandLine.CypressRunR
   const projectDir = (runResults.config as { projectRoot?: string } | undefined)?.projectRoot ?? process.cwd();
   const outputDir = resolveOutputDir(projectDir, options.outputDir);
   const outputs = options.outputs ?? REPORT_OUTPUTS;
-  const summary = buildReportSummary(runResults, projectDir, { ...options, outputDir });
+  const summary = applyRedaction(buildReportSummary(runResults, projectDir, { ...options, outputDir }), options);
   if (needsHistory(outputs)) {
     const loader = options.historyLoader === undefined ? createHistoryLoader(options.history, summary.ci?.branch) : options.historyLoader;
     await attachRunHistory(summary, loader);

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { DEFAULT_REPORTS_DIR, REPORT_OUTPUTS, mergeReports, type ReportOutput, type ReportTheme } from './report';
+import { mergeReports } from './merge';
+import { DEFAULT_REPORTS_DIR, REPORT_OUTPUTS, type ReportOutput, type ReportTheme } from './types';
 
 const USAGE = `Usage: neo-reporter merge [dir] [options]
 

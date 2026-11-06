@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { attachRunHistory, createHistoryLoader, type ReportSummary } from '../src/report';
+import { attachRunHistory, createHistoryLoader, type ReportSummary } from '../src';
 import { sampleSummary } from './fixtures/summary';
 
 interface FakeRun {

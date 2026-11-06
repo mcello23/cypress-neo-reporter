@@ -13,7 +13,7 @@ import {
   generateReports,
   mergeReports,
   reportFileBase
-} from '../src/report';
+} from '../src';
 import { sampleSummary } from './fixtures/summary';
 
 function tempDir(): string {

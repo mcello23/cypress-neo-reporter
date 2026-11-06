@@ -1,4 +1,4 @@
-import type { ReportSummary, SpecData, TestData, TestStep } from '../../src';
+import type { ReportSummary, SpecData, TestData, TestStep } from '../../src/types';
 
 const RUN_AT = Date.parse('2026-11-06T10:42:00Z');
 const at = (offsetMs: number) => new Date(RUN_AT + offsetMs).toISOString();

@@ -1,31 +1,24 @@
-export { STEPS_FILE_NAME, SPEC_OWNERS_FILE_NAME, DEFAULT_REPORTS_DIR, REPORT_OUTPUTS, MERGE_OUTPUTS } from './types';
+/// <reference types="cypress" preserve="true" />
+import { generateReports as writeRunReports, type ReportFiles } from './output';
+import type { NeoReporterOptions } from './types';
+
 export type {
-  ReportOutput,
-  ReportTheme,
-  ReporterOptions,
+  ReportSummary,
+  SpecData,
+  TestData,
   NeoReporterOptions,
   MergeOptions,
-  RecordedTestPayload,
-  NetworkFailure,
-  TestAttempt,
-  TestStep,
-  TestData,
-  EmbeddedFile,
-  SpecData,
-  CiInfo,
-  HistoryRun,
-  RunHistory,
-  ReportSummary,
   HistoryOptions,
-  HistoryLoader
+  ReportOutput,
+  ReportTheme
 } from './types';
-export { machineTimeZone, assertTimeZone } from './format';
-export { readSpecOwners } from './ci';
-export { createHistoryLoader, attachRunHistory } from './history';
-export { buildReportSummary } from './summary';
-export { generateJUnitXml } from './junit';
-export { generateMarkdownSummary } from './markdown';
-export { generateHtmlReport } from './html';
-export { reportFileBase, generateReports, type ReportFiles } from './output';
-export { mergeReports, type MergeResult } from './merge';
+export type { ReportFiles } from './output';
 export { neoReporter } from './reporter';
+export { mergeReports, type MergeResult } from './merge';
+export { generateHtmlReport } from './html';
+export { generateMarkdownSummary } from './markdown';
+export { generateJUnitXml } from './junit';
+
+export function generateReports(runResults: CypressCommandLine.CypressRunResult, options: NeoReporterOptions = {}): Promise<ReportFiles> {
+  return writeRunReports(runResults, options);
+}

@@ -2,8 +2,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, relative, resolve, isAbsolute, basename } from 'node:path';
 import { readCiInfo, readSpecOwners, readSpecOwnersFile } from './ci';
 import { computePassRate, deriveSuiteLabel, machineTimeZone, toEmbeddedFile, toScreenshotSafeName, toSourceSpecPath } from './format';
+import { packageVersion } from './html/assets';
 import {
   DEFAULT_REPORTS_DIR,
+  SCHEMA_VERSION,
   STEPS_FILE_NAME,
   type EmbeddedFile,
   type RecordedTestsMap,
@@ -164,6 +166,8 @@ export function buildReportSummary(
   const runConfig = runResults.config;
 
   return {
+    schemaVersion: SCHEMA_VERSION,
+    reporterVersion: packageVersion(),
     projectName: options.projectName ?? readProjectName(projectDir) ?? 'Cypress',
     timestamp: new Date().toISOString(),
     browser: `${runResults.browserName ?? 'Chrome'} ${runResults.browserVersion ?? ''}`.trim(),

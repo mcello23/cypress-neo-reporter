@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { createRequire } from 'node:module';
+import { join } from 'node:path';
 
 const PACKAGE_ROOT = join(__dirname, '..', '..');
+const PLYR_DIR = join(PACKAGE_ROOT, 'vendor', 'plyr-3.8.5');
 
 export function packageVersion(): string {
   try {
@@ -13,8 +13,7 @@ export function packageVersion(): string {
 }
 
 export function readPlyrAssets(): { js: string; css: string; sprite: string } {
-  const plyrDist = dirname(createRequire(join(PACKAGE_ROOT, 'package.json')).resolve('plyr/dist/plyr.css'));
-  const read = (file: string) => readFileSync(join(plyrDist, file), 'utf-8');
+  const read = (file: string) => readFileSync(join(PLYR_DIR, file), 'utf-8');
   return {
     js: read('plyr.min.js'),
     css: read('plyr.css'),

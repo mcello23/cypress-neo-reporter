@@ -1,3 +1,4 @@
+/// <reference types="cypress" preserve="true" />
 import { RECORD_TASK } from './task';
 
 export type StepPhase = 'VISIT' | 'FIND' | 'STEP' | 'CHECK' | 'INFO';

@@ -3,17 +3,11 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-  assertTimeZone,
-  buildReportSummary,
-  createHistoryLoader,
-  generateHtmlReport,
-  generateJUnitXml,
-  generateMarkdownSummary,
-  generateReports,
-  mergeReports,
-  reportFileBase
-} from '../src';
+import { generateHtmlReport, generateJUnitXml, generateMarkdownSummary, generateReports, mergeReports } from '../src';
+import { assertTimeZone } from '../src/format';
+import { createHistoryLoader } from '../src/history';
+import { reportFileBase } from '../src/output';
+import { buildReportSummary } from '../src/summary';
 import { sampleSummary } from './fixtures/summary';
 
 function tempDir(): string {

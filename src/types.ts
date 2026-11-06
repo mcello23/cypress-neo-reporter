@@ -3,6 +3,7 @@ export const SPEC_OWNERS_FILE_NAME = 'spec-owners.json';
 export const DEFAULT_REPORTS_DIR = 'cypress/reports';
 export const REPORT_OUTPUTS = ['html', 'json', 'junit', 'markdown'] as const;
 export const MERGE_OUTPUTS = ['html', 'markdown'] as const;
+export const SCHEMA_VERSION = 1;
 
 export type ReportOutput = (typeof REPORT_OUTPUTS)[number];
 export type ReportTheme = 'auto' | 'light' | 'dark';
@@ -137,6 +138,8 @@ export interface RunHistory {
 }
 
 export interface ReportSummary {
+  schemaVersion?: number;
+  reporterVersion?: string;
   projectName: string;
   timestamp: string;
   browser: string;

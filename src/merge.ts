@@ -2,9 +2,10 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { assertTimeZone, computePassRate } from './format';
 import { attachRunHistory, createHistoryLoader } from './history';
+import { packageVersion } from './html/assets';
 import { needsHistory, writeReportOutputs, type ReportFiles } from './output';
 import { capEmbeddedVideos } from './summary';
-import { DEFAULT_REPORTS_DIR, MERGE_OUTPUTS, STEPS_FILE_NAME, type MergeOptions, type ReportSummary } from './types';
+import { DEFAULT_REPORTS_DIR, MERGE_OUTPUTS, SCHEMA_VERSION, STEPS_FILE_NAME, type MergeOptions, type ReportSummary } from './types';
 
 export interface MergeResult {
   summary: ReportSummary;
@@ -23,7 +24,11 @@ function findReportJsonFiles(dir: string): string[] {
 function readReportJson(filePath: string): ReportSummary | null {
   try {
     const data = JSON.parse(readFileSync(filePath, 'utf-8')) as ReportSummary;
-    return data && Array.isArray(data.specs) && typeof data.totalTests === 'number' ? data : null;
+    if (!data || !Array.isArray(data.specs) || typeof data.totalTests !== 'number') return null;
+    if (!data.mergedFrom && data.schemaVersion !== SCHEMA_VERSION) {
+      console.warn(`[neo-reporter] ${filePath} uses report schema ${data.schemaVersion ?? 'none'} (reporter ${data.reporterVersion ?? 'unknown'}), expected ${SCHEMA_VERSION}. The merged report may be incomplete.`);
+    }
+    return data;
   } catch (error) {
     console.warn(`[neo-reporter] Skipping unreadable report file ${filePath}: ${error}`);
     return null;
@@ -49,6 +54,8 @@ export async function mergeReports(options: MergeOptions = {}): Promise<MergeRes
   const totalPassed = total(summary => summary.totalPassed);
 
   const merged: ReportSummary = {
+    schemaVersion: SCHEMA_VERSION,
+    reporterVersion: packageVersion(),
     projectName: options.projectName ?? first.projectName,
     timestamp: new Date().toISOString(),
     browser: latest(summary => summary.browser),

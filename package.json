@@ -1,6 +1,6 @@
 {
   "name": "cypress-neo-reporter",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "One HTML report for Cypress runs: failures grouped by cause, history from your CI and the evidence behind every failed test.",
   "keywords": [
     "cypress",
@@ -22,6 +22,7 @@
   },
   "license": "MIT",
   "author": "Marcelo Costa",
+  "type": "commonjs",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -54,6 +55,7 @@
   },
   "files": [
     "dist",
+    "vendor",
     "README.md",
     "LICENSE",
     "CHANGELOG.md"
@@ -66,13 +68,12 @@
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
     "demo": "tsx scripts/demo.ts",
-    "prepublishOnly": "npm run typecheck && npm test && npm run build"
-  },
-  "dependencies": {
-    "plyr": "^3.8.4"
+    "e2e": "node e2e/run.mjs",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run typecheck && npm test"
   },
   "peerDependencies": {
-    "cypress": ">=15"
+    "cypress": "^15.0.0 || ^16.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.19.43",

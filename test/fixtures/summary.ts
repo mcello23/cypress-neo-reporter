@@ -1,4 +1,4 @@
-import type { ReportSummary, SpecData, TestData, TestStep } from '../../src/report';
+import type { ReportSummary, SpecData, TestData, TestStep } from '../../src/types';
 
 const RUN_AT = Date.parse('2026-11-06T10:42:00Z');
 const at = (offsetMs: number) => new Date(RUN_AT + offsetMs).toISOString();
@@ -102,8 +102,8 @@ export function sampleSummary(): ReportSummary {
   const count = (state: TestData['state']) => tests.filter(test => test.state === state).length;
   const totalPassed = count('passed') + count('flaky');
   const history: Record<string, string> = {};
-  tests.forEach((test, index) => {
-    history[test.fullTitle] = test.fullTitle.includes('removes the last item') ? 'PPPPPPPPFF' : index % 9 === 0 ? 'PPPPPFPPPP' : 'PPPPPPPPPP';
+  specs.flatMap(item => item.tests.map(test => `${item.specFile} › ${test.fullTitle}`)).forEach((key, index) => {
+    history[key] = key.includes('removes the last item') ? 'PPPPPPPPFF' : index % 9 === 0 ? 'PPPPPFPPPP' : 'PPPPPPPPPP';
   });
   return {
     projectName: 'acme-storefront',

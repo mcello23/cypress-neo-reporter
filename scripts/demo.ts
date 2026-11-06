@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { generateHtmlReport, generateJUnitXml, generateMarkdownSummary, reportFileBase } from '../src/report';
+import { generateHtmlReport, generateJUnitXml, generateMarkdownSummary } from '../src';
+import { reportFileBase } from '../src/output';
 import { sampleSummary } from '../test/fixtures/summary';
 
 const outputDir = resolve(__dirname, '..', 'demo');

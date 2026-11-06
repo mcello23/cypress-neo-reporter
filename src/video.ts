@@ -9,7 +9,7 @@ const FAILED_VIDEO_CRF = 30;
 const CLIP_LEAD_MS = 0;
 const CLIP_TAIL_MS = 1000;
 const FFMPEG_TIMEOUT_MS = 5 * 60 * 1000;
-const MAX_CLIP_NAME_LENGTH = 80;
+const MAX_CLIP_NAME_BYTES = 80;
 export const recordedSpecVideos = new Map<string, string>();
 
 interface VideoTools {
@@ -51,11 +51,20 @@ function testVideoDir(specVideoPath: string): string {
   return specVideoPath.replace(/\.mp4$/i, '');
 }
 
+function prefixWithinBytes(text: string, maxBytes: number): string {
+  let prefix = '';
+  for (const char of text) {
+    if (Buffer.byteLength(prefix + char) > maxBytes) break;
+    prefix += char;
+  }
+  return prefix;
+}
+
 export function testVideoPath(specVideoPath: string, title: string[]): string {
   const name = toScreenshotSafeName(title.join(' '));
   const fileName =
-    name.length > MAX_CLIP_NAME_LENGTH
-      ? `${Array.from(name).slice(0, MAX_CLIP_NAME_LENGTH).join('')}-${createHash('sha1').update(name).digest('hex').slice(0, 8)}`
+    Buffer.byteLength(name) > MAX_CLIP_NAME_BYTES
+      ? `${prefixWithinBytes(name, MAX_CLIP_NAME_BYTES)}-${createHash('sha1').update(name).digest('hex').slice(0, 8)}`
       : name;
   return join(testVideoDir(specVideoPath), `${fileName}.mp4`);
 }

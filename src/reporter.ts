@@ -33,9 +33,15 @@ export function createNeoReporter(config: Cypress.PluginConfigOptions, options: 
   };
 
   return {
-    beforeRun(): void {
+    beforeRun(details?: Cypress.BeforeRunDetails): void {
       beforeRunSeen = true;
       recordedTests.clear();
+      const resolved = details?.config;
+      if (resolved && !(resolved.expose ?? resolved.env)?.[PLUGIN_FLAG]) {
+        console.warn(
+          '[neo-reporter] setupNodeEvents did not return the config, so steps, test code, failed requests and console errors are not recorded. End setupNodeEvents with: return neoReporter(on, config, options)'
+        );
+      }
       try {
         if (needsHistory(options.outputs ?? REPORT_OUTPUTS)) {
           historyLoader = createHistoryLoader(options.history, readCiInfo(config.projectRoot).branch, config.projectRoot);

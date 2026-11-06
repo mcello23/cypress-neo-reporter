@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join, relative, isAbsolute, basename } from 'node:path';
 import { readCiInfo, readSpecOwners, readSpecOwnersFile } from './ci';
-import { computePassRate, deriveSuiteLabel, machineTimeZone, stripAnsi, toScreenshotSafeName, toSourceSpecPath } from './format';
+import { computePassRate, deriveSuiteLabel, machineTimeZone, stripAnsi, toSourceSpecPath } from './format';
 import { packageVersion } from './html/assets';
 import { SCHEMA_VERSION, type EmbeddedFile, type RecordedTestsMap, type ReporterOptions, type ReportSummary, type SpecData, type TestData } from './types';
 import { recordedSpecVideos, testVideoPath } from './video';
@@ -59,12 +59,33 @@ export function recordedTestKey(spec: string, fullTitle: string): string {
   return `${toSourceSpecPath(spec)}::${fullTitle}`;
 }
 
-const SCREENSHOT_SUFFIX = /^( \((failed|attempt \d+|\d+)\))*\.png$/;
+const SCREENSHOT_SUFFIX = /^( -- (?:before|after) (?:each|all) hook(?: .+?)??)?( \(failed\))?(?: \(attempt \d+\))?(?: \(\d+\))?\.png$/;
+const CUT_SCREENSHOT_NAME_BYTES = 253;
+const CUT_SUFFIX_STARTS = [' -- before each hook', ' -- before all hook', ' -- after each hook', ' -- after all hook', ' (failed)', ' (attempt '];
 
-function isTestScreenshot(shotPath: string, title: string[]): boolean {
-  const name = toScreenshotSafeName(basename(shotPath));
-  const testName = toScreenshotSafeName(title.join(' -- '));
-  return name.startsWith(testName) && SCREENSHOT_SUFFIX.test(name.slice(testName.length));
+function toScreenshotTitle(title: string): string {
+  return title
+    .replace(/[/?<>\\:*|"]/g, '')
+    .replace(/[\x00-\x1f\x80-\x9f]/g, '')
+    .replace(/^\.+$/, '')
+    .replace(/^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$/i, '')
+    .replace(/[. ]+$/, '');
+}
+
+function isTestScreenshot(shotPath: string, title: string[], failed: boolean): boolean {
+  const name = basename(shotPath);
+  const leaf = toScreenshotTitle(title[title.length - 1]);
+  const suites = title.slice(0, -1).filter(Boolean).map(toScreenshotTitle);
+  for (let depth = suites.length; depth >= 0; depth--) {
+    const testName = [...suites.slice(0, depth), leaf].join(' -- ');
+    const match = name.startsWith(testName) ? SCREENSHOT_SUFFIX.exec(name.slice(testName.length)) : null;
+    if (match && (depth === suites.length || match[1]) && (failed || !match[2])) return true;
+  }
+  if (!failed || Buffer.byteLength(name) < CUT_SCREENSHOT_NAME_BYTES) return false;
+  const testName = [...suites, leaf].join(' -- ');
+  const cut = name.replace(/( \(\d+\))?\.png$/, '').replace(/\uFFFD+$/, '');
+  const rest = cut.slice(testName.length);
+  return testName.startsWith(cut) || (cut.startsWith(testName) && CUT_SUFFIX_STARTS.some(start => start.startsWith(rest) || rest.startsWith(start)));
 }
 
 /**
@@ -89,11 +110,11 @@ export function buildReportSummary(
       const recorded = recordedTests.get(recordedTestKey(relPath, fullTitle));
       const displayError = recorded?.firstError ?? t.displayError;
 
+      const state = toTestState(t);
       const testScreenshots = (run.screenshots ?? [])
         .map(shot => toProjectPath(shot.path, projectDir))
-        .filter(shotPath => isTestScreenshot(shotPath, t.title))
+        .filter(shotPath => isTestScreenshot(shotPath, t.title, state === 'failed' || state === 'flaky'))
         .map(mediaFile);
-      const state = toTestState(t);
       const clipPath =
         specVideoPath && (state === 'failed' || state === 'flaky')
           ? testVideoPath(toProjectPath(specVideoPath, projectDir), t.title)

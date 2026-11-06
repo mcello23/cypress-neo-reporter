@@ -6,7 +6,7 @@ On GitLab CI the reporter reads the pipeline from the environment and links the 
 - **Test results.** The JUnit file feeds the merge request test widget and the pipeline's Tests tab.
 - **Summary.** GitLab has no job summary page, so `summary.md` stays in the artifacts. Set `reportUrl` or `--report-url` to give it a link to the report.
 
-Failure history is read from Azure DevOps only for now.
+Failure history comes from a history file that the pipeline keeps in the GitLab cache, see [Run history](#run-history).
 
 ## One job
 
@@ -29,7 +29,7 @@ e2e:
 
 ## Sharded runs
 
-Every shard writes the same file names, so each one moves its reports into its own folder before the artifacts are collected. The `e2e-report` job gets all of them through `needs` and merges them into one report.
+Every shard writes the same HTML, JUnit and summary file names, so each one moves its reports into its own folder before the artifacts are collected. The `e2e-report` job gets all of them through `needs` and merges them into one report.
 
 ```yaml
 e2e:
@@ -64,5 +64,30 @@ e2e-report:
     paths:
       - cypress/reports/
 ```
+
+## Run history
+
+Turn the file provider on in the Cypress config:
+
+```ts
+return neoReporter(on, config, { history: { provider: 'file' } });
+```
+
+Then cache the history file in the job that runs Cypress, also when tests fail:
+
+```yaml
+e2e:
+  cache:
+    key: neo-history-$CI_COMMIT_REF_SLUG
+    fallback_keys:
+      - neo-history-$CI_DEFAULT_BRANCH
+    paths:
+      - cypress/reports/neo-history.jsonl
+    when: always
+```
+
+A run starts from the latest history of its own branch, else of the default branch. For sharded runs, leave the file provider off on the shards, put the cache on `e2e-report` and pass `--history-file cypress/reports/neo-history.jsonl` to `neo-reporter merge`.
+
+To let the report decide whether the job fails, see [Quality gate](../README.md#quality-gate-and-notifications).
 
 The environment variables the reporter reads are listed in [options.md](options.md#environment-variables).

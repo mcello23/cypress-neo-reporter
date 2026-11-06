@@ -6,7 +6,7 @@ On GitHub Actions the reporter reads the run from the environment, links the rep
 - **Job summary.** Failure groups and flaky tests on the run's summary page, added after whatever else the step wrote there. The plugin and `neo-reporter merge` both add one.
 - **Report link.** The summary links to the run, where the report artifact is listed. Set `reportUrl` or `--report-url` to point it somewhere else.
 
-Failure history is read from Azure DevOps only for now.
+Failure history comes from a history file that the workflow keeps in the Actions cache, see [Run history](#run-history).
 
 ## One job
 
@@ -79,6 +79,36 @@ jobs:
 ```
 
 Each shard also adds its own job summary. To keep only the merged one, leave `'markdown'` out of `outputs` on the shards.
+
+## Run history
+
+Turn the file provider on in the Cypress config:
+
+```ts
+return neoReporter(on, config, { history: { provider: 'file' } });
+```
+
+Then restore the history file before Cypress runs and save it after, also when tests fail:
+
+```yaml
+      - uses: actions/cache/restore@v4
+        with:
+          path: cypress/reports/neo-history.jsonl
+          key: neo-history-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            neo-history-${{ github.ref_name }}-
+            neo-history-${{ github.event.repository.default_branch }}-
+      - uses: cypress-io/github-action@v6
+      - uses: actions/cache/save@v4
+        if: ${{ !cancelled() }}
+        with:
+          path: cypress/reports/neo-history.jsonl
+          key: neo-history-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+```
+
+A run starts from the latest history of its own branch, else of the default branch. For sharded runs, leave the file provider off on the shards, put the two cache steps around the merge in the `report` job and pass `--history-file cypress/reports/neo-history.jsonl` to `neo-reporter merge`.
+
+To let the report decide whether the job fails, see [Quality gate](../README.md#quality-gate-and-notifications).
 
 ## Pull request comment
 

@@ -16,8 +16,11 @@ export const KNOWN_OPTION_KEYS: string[] = [
   'includeTestCode',
   'keepVideos',
   'reportRoot',
-  'summaryFiles'
+  'summaryFiles',
+  'baseline'
 ];
+
+const HISTORY_PROVIDERS = ['azure-devops', 'file'];
 
 const THEMES: readonly ReportTheme[] = ['auto', 'light', 'dark'];
 
@@ -45,6 +48,9 @@ export function validateOptions(options: MergeOptions): void {
     throw new Error(`[neo-reporter] Unknown theme ${JSON.stringify(theme)}. Use ${THEMES.join(', ')}.`);
   }
   if (history) {
+    if (history.provider !== undefined && !HISTORY_PROVIDERS.includes(history.provider)) {
+      throw new Error(`[neo-reporter] Unknown history.provider ${JSON.stringify(history.provider)}. Use ${HISTORY_PROVIDERS.join(' or ')}.`);
+    }
     assertPositiveInteger('history.runs', history.runs);
     assertPositiveInteger('history.maxWeeks', history.maxWeeks);
   }

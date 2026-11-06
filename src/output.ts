@@ -103,7 +103,8 @@ export async function generateReports(runResults: CypressCommandLine.CypressRunR
   const outputs = options.outputs ?? REPORT_OUTPUTS;
   const summary = applyRedaction(buildReportSummary(runResults, projectDir, { ...options, outputDir }), options);
   if (needsHistory(outputs)) {
-    const loader = options.historyLoader === undefined ? createHistoryLoader(options.history, summary.ci?.branch) : options.historyLoader;
+    const loader =
+      options.historyLoader === undefined ? createHistoryLoader(options.history, summary.ci?.branch, projectDir) : options.historyLoader;
     await attachRunHistory(summary, loader);
   }
   return writeReportOutputs(summary, outputDir, options.reportName ?? summary.projectName, outputs, options.reportUrl);

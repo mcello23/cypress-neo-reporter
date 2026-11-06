@@ -571,7 +571,7 @@ export function generateHtmlReport(summary: ReportSummary): string {
           )
           .join('')}</div>`
       : emptyState('No timed tests this run.'),
-    ' panel-half'
+    summary.history?.durations ? '' : ' panel-half'
   );
 
   const slowestSpecsPanelHtml = panel(
@@ -587,7 +587,7 @@ export function generateHtmlReport(summary: ReportSummary): string {
           )
           .join('')}</div>`
       : emptyState('No specs ran.'),
-    ' panel-half'
+    summary.history?.durations ? '' : ' panel-half'
   );
 
   const ownerCounts = new Map<string, { failed: number; flaky: number }>();
@@ -658,6 +658,12 @@ export function generateHtmlReport(summary: ReportSummary): string {
       items.length ? `<div class="panel-list">${items.map(item => testRowButton(item, value(item))).join('')}</div>` : emptyState(empty)
     );
 
+  const passFailFlips = (test: TestData) => {
+    const current = test.state === 'failed' ? 'F' : test.state === 'passed' || test.state === 'flaky' ? 'P' : '';
+    const codes = `${testHistoryCodes(summary, test) ?? ''}${current}`.replace(/[^PF]/g, '');
+    return [...codes].filter((code, index) => index > 0 && code !== codes[index - 1]).length;
+  };
+
   const history = summary.history;
   const trendPoints = [
     ...(history?.runs ?? []).map(run => ({
@@ -676,7 +682,7 @@ export function generateHtmlReport(summary: ReportSummary): string {
         'Run history',
         panelIcons.bars,
         'brand',
-        `Failed tests per run · last ${history.runs.length} runs of “${escapeHtml(history.family)}” in Azure DevOps`,
+        `Failed tests per run · last ${history.runs.length} run${history.runs.length === 1 ? '' : 's'} of “${escapeHtml(history.family)}”${history.source ? ` from ${escapeHtml(history.source)}` : ''}`,
         `<div class="trend-chart">${trendPoints
           .map(point => {
             const body = `<span class="trend-value">${point.failed}</span><span class="trend-track"><span class="trend-bar" style="height: ${Math.max(3, Math.round((point.failed / maxTrendFailed) * 100))}%"></span></span><span class="trend-label">${escapeHtml(point.label)}</span>`;
@@ -696,26 +702,43 @@ export function generateHtmlReport(summary: ReportSummary): string {
         'Most unstable',
         'flaky',
         allTestsWithSpec
-          .map(item => ({ item, codes: testHistoryCodes(summary, item.test) ?? '' }))
-          .filter(({ codes }) => codes.split('F').length - 1 >= 2)
-          .sort((a, b) => b.codes.split('F').length - a.codes.split('F').length)
+          .map(item => ({ item, flips: passFailFlips(item.test) }))
+          .filter(({ flips }) => flips >= 2)
+          .sort((a, b) => b.flips - a.flips)
           .slice(0, 5)
           .map(({ item }) => item),
-        item => {
-          const codes = testHistoryCodes(summary, item.test) ?? '';
-          return `${codes.split('F').length - 1}/${codes.replace(/-/g, '').length}`;
-        },
-        'No test failed twice in the last runs.',
-        'failed in last runs'
+        item => `${passFailFlips(item.test)} flips`,
+        'No test went from pass to fail and back in the last runs.',
+        'pass ↔ fail flips'
       )}`
     : panel(
         'Run history',
         panelIcons.bars,
         'neutral',
         '',
-        `<p class="empty-state">Not loaded for this report. History comes from past Azure DevOps test runs. In a pipeline, map <code>SYSTEM_ACCESSTOKEN</code> into the Cypress step. On your machine, set <code>AZURE_DEVOPS_PAT</code> (Test Management, read) plus <code>history.organization</code> and <code>history.project</code> in the reporter options.</p>`,
+        `<p class="empty-state">Not loaded for this report. Keep history in a file with <code>history: { provider: 'file' }</code> in the reporter options, or read past Azure DevOps test runs: in a pipeline, map <code>SYSTEM_ACCESSTOKEN</code> into the Cypress step; on your machine, set <code>AZURE_DEVOPS_PAT</code> (Test Management, read) plus <code>history.organization</code> and <code>history.project</code>.</p>`,
         ' panel-wide'
       );
+
+  const usualDurations = history?.durations;
+  const slowerTestsPanelHtml = usualDurations
+    ? historyListPanel(
+        'Slower than usual',
+        'time',
+        allTestsWithSpec
+          .filter(
+            ({ test }) =>
+              (test.state === 'passed' || test.state === 'flaky') &&
+              test.duration > 2000 &&
+              test.duration > 2 * (usualDurations[test.fullTitle] ?? Infinity)
+          )
+          .sort((a, b) => b.test.duration / usualDurations[b.test.fullTitle] - a.test.duration / usualDurations[a.test.fullTitle])
+          .slice(0, 5),
+        ({ test }) => `${formatDuration(usualDurations[test.fullTitle])} → ${formatDuration(test.duration)}`,
+        'No passing test took over twice its usual time.',
+        'usual → this run'
+      )
+    : '';
 
   const durationsPanelHtml = `
         <details class="panel panel-wide accent-brand durations-panel">
@@ -871,6 +894,7 @@ ${REPORT_CSS}
           ${aiPanel('flaky', aiFlakyPrompt, flakyTests.length)}
           ${ownersPanelHtml}
           ${slowestTestsPanelHtml}
+          ${slowerTestsPanelHtml}
           ${slowestSpecsPanelHtml}
           ${durationsPanelHtml}
         </div>

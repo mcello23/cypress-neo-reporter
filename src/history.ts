@@ -1,5 +1,8 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { basename, dirname, resolve } from 'node:path';
 import { adoCollectionUrl } from './ci';
-import type { HistoryLoader, HistoryOptions, ReportSummary, RunHistory } from './types';
+import { historyKey } from './junit';
+import type { HistoryLoader, HistoryOptions, HistoryRun, ReportSummary, RunHistory, SpecData, TestData } from './types';
 
 const HISTORY_RUN_COUNT = 10;
 const HISTORY_MAX_WEEKS = 8;
@@ -9,7 +12,10 @@ const HISTORY_CANDIDATE_FAMILIES = 10;
 const HISTORY_CONCURRENCY = 10;
 const HISTORY_TIMEOUT_MS = 180_000;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-const RESULTS_PAGE_SIZE = 5000;
+const RESULTS_PAGE_SIZE = 1000;
+const HISTORY_FILE_PATH = 'cypress/reports/neo-history.jsonl';
+const HISTORY_FILE_LINES_PER_RUN = 5;
+const STATE_CODES: Record<TestData['state'], string> = { passed: 'P', flaky: 'P', failed: 'F', pending: 'S', skipped: 'S' };
 
 interface AdoRun {
   id: number;
@@ -30,6 +36,26 @@ interface AdoHistoryTarget {
   runs: number;
   maxWeeks: number;
   branch?: string;
+}
+
+interface TestOutcome {
+  s: string;
+  d: number;
+}
+
+interface RunOutcomes {
+  results: TestOutcome[];
+  tests: Map<string, TestOutcome>;
+}
+
+type PastRun = Omit<HistoryRun, 'total' | 'passed' | 'failed'> & RunOutcomes;
+
+interface HistoryLine {
+  date: string;
+  name: string;
+  branch?: string;
+  label: string;
+  tests: Record<string, TestOutcome>;
 }
 
 function adoAuthorization(): string | null {
@@ -53,6 +79,11 @@ function adoHistoryTarget(options: HistoryOptions, branch?: string): AdoHistoryT
   if (!organizationUrl || !project) {
     console.warn('[neo-reporter] Run history skipped: set history.organization and history.project to read Azure DevOps outside a pipeline.');
     return null;
+  }
+  if (/^http:\/\//i.test(options.organization ?? '')) {
+    console.warn(
+      `[neo-reporter] history.organization is http://, so the Azure DevOps token goes unencrypted to ${organizationUrl}. Use https:// where the server supports it.`
+    );
   }
   return {
     apiUrl: `${organizationUrl}${encodeURIComponent(project)}/_apis`,
@@ -131,16 +162,19 @@ function outcomeCode(outcome: string): string {
   return 'S';
 }
 
-async function adoRunOutcomes(apiUrl: string, authorization: string, runId: number): Promise<Map<string, string>> {
-  const outcomes = new Map<string, string>();
+async function adoRunOutcomes(apiUrl: string, authorization: string, runId: number): Promise<RunOutcomes> {
+  const outcomes: RunOutcomes = { results: [], tests: new Map() };
   for (let skip = 0; ;) {
-    const { body } = await adoGet<{ value: Array<{ automatedTestName?: string; testCaseTitle?: string; outcome: string }> }>(
-      `${apiUrl}/test/Runs/${runId}/results?$top=${RESULTS_PAGE_SIZE}&$skip=${skip}&api-version=7.1`,
-      authorization
-    );
-    body.value.forEach(result => outcomes.set(result.automatedTestName ?? result.testCaseTitle ?? '', outcomeCode(result.outcome)));
+    const { body } = await adoGet<{
+      value: Array<{ automatedTestName?: string; testCaseTitle?: string; outcome: string; durationInMs?: number }>;
+    }>(`${apiUrl}/test/Runs/${runId}/results?$top=${RESULTS_PAGE_SIZE}&$skip=${skip}&api-version=7.1`, authorization);
+    if (body.value.length === 0) return outcomes;
+    for (const result of body.value) {
+      const outcome = { s: outcomeCode(result.outcome), d: result.durationInMs ?? 0 };
+      outcomes.results.push(outcome);
+      [result.automatedTestName, result.testCaseTitle].forEach(name => name && outcomes.tests.set(historyKey(name), outcome));
+    }
     skip += body.value.length;
-    if (body.value.length < RESULTS_PAGE_SIZE) return outcomes;
   }
 }
 
@@ -159,12 +193,12 @@ async function mapWithLimit<T, R>(items: T[], limit: number, task: (item: T) => 
 
 interface HistoryCandidate {
   run: AdoRun;
-  outcomes: Map<string, string>;
+  outcomes: RunOutcomes;
 }
 
 interface FamilyRuns {
   runs: AdoRun[];
-  outcomes: Map<string, string>[];
+  outcomes: RunOutcomes[];
 }
 
 async function loadHistoryCandidates(target: AdoHistoryTarget): Promise<HistoryCandidate[]> {
@@ -179,7 +213,7 @@ async function loadHistoryCandidates(target: AdoHistoryTarget): Promise<HistoryC
 
 function pickRunFamily(candidates: HistoryCandidate[], testNames: string[], runName?: string): string | null {
   if (runName) return runName;
-  const overlaps = candidates.map(({ outcomes }) => testNames.filter(name => outcomes.has(name)).length / Math.max(testNames.length, 1));
+  const overlaps = candidates.map(({ outcomes }) => testNames.filter(name => outcomes.tests.has(name)).length / Math.max(testNames.length, 1));
   const best = overlaps.reduce((bestIndex, overlap, index) => (overlap > (overlaps[bestIndex] ?? -1) ? index : bestIndex), -1);
   return best >= 0 && overlaps[best] >= HISTORY_MIN_OVERLAP ? candidates[best].run.name : null;
 }
@@ -198,32 +232,141 @@ async function loadFamilyRuns(target: AdoHistoryTarget, family: string, candidat
   return { runs, outcomes };
 }
 
-function toRunHistory(summary: ReportSummary, family: string, { runs, outcomes }: FamilyRuns): RunHistory {
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function toRunHistory(
+  summary: ReportSummary,
+  family: string,
+  source: string,
+  runs: PastRun[],
+  key: (spec: SpecData, test: TestData) => string
+): RunHistory {
   const tests: Record<string, string> = {};
-  for (const test of summary.specs.flatMap(spec => spec.tests)) {
-    const codes = outcomes.map(runOutcomes => runOutcomes.get(test.title.join(' ')) ?? '-').join('');
-    if (/[PFS]/.test(codes)) tests[test.fullTitle] = codes;
+  const durations: Record<string, number> = {};
+  for (const spec of summary.specs) {
+    for (const test of spec.tests) {
+      const outcomes = runs.map(run => run.tests.get(key(spec, test)));
+      const codes = outcomes.map(outcome => outcome?.s ?? '-').join('');
+      if (/[PFS]/.test(codes)) tests[test.fullTitle] = codes;
+      const passed = outcomes.flatMap(outcome => (outcome?.s === 'P' && outcome.d > 0 ? [outcome.d] : []));
+      if (passed.length > 0) durations[test.fullTitle] = median(passed);
+    }
   }
   return {
     family: family.trim(),
-    runs: runs.map((run, index) => {
-      const codes = [...outcomes[index].values()];
-      return {
-        id: run.id,
-        label: run.release?.name ?? run.build?.name ?? `Run ${run.id}`,
-        date: run.completedDate ?? '',
-        total: codes.length,
-        passed: codes.filter(code => code === 'P').length,
-        failed: codes.filter(code => code === 'F').length,
-        url: run.webAccessUrl
-      };
-    }),
+    source,
+    runs: runs.map(run => ({
+      id: run.id,
+      label: run.label,
+      date: run.date,
+      total: run.results.length,
+      passed: run.results.filter(result => result.s === 'P').length,
+      failed: run.results.filter(result => result.s === 'F').length,
+      url: run.url
+    })),
+    tests,
+    durations
+  };
+}
+
+function adoTestKey(_spec: SpecData, test: TestData): string {
+  return historyKey(test.fullTitle);
+}
+
+function toAdoRunHistory(summary: ReportSummary, family: string, { runs, outcomes }: FamilyRuns): RunHistory {
+  const pastRuns = runs.map((run, index) => ({
+    id: run.id,
+    label: run.release?.name ?? run.build?.name ?? `Run ${run.id}`,
+    date: run.completedDate ?? '',
+    url: run.webAccessUrl,
+    ...outcomes[index]
+  }));
+  return toRunHistory(summary, family, 'Azure DevOps', pastRuns, adoTestKey);
+}
+
+function fileTestKey(spec: SpecData, test: TestData): string {
+  return `${spec.specFile} › ${test.fullTitle}`;
+}
+
+function historyName(summary: ReportSummary): string {
+  return summary.suiteLabel || summary.projectName;
+}
+
+function toHistoryLine(summary: ReportSummary): HistoryLine {
+  const tests: Record<string, TestOutcome> = {};
+  summary.specs.forEach(spec => spec.tests.forEach(test => (tests[fileTestKey(spec, test)] = { s: STATE_CODES[test.state], d: test.duration })));
+  return {
+    date: summary.timestamp,
+    name: historyName(summary),
+    branch: summary.ci?.branch,
+    label: summary.ci?.release ?? summary.ci?.build ?? summary.ci?.commit?.slice(0, 8) ?? 'Local run',
     tests
   };
 }
 
-export function createHistoryLoader(options: HistoryOptions | false = {}, branch?: string): HistoryLoader | null {
+function toPastRun(line: HistoryLine): PastRun {
+  const tests = new Map(Object.entries(line.tests));
+  return { id: Date.parse(line.date), label: line.label, date: line.date, results: [...tests.values()], tests };
+}
+
+function readHistoryLines(path: string, mergedRuns: string[]): HistoryLine[] {
+  if (!existsSync(path)) return [];
+  return readFileSync(path, 'utf-8')
+    .split('\n')
+    .flatMap(text => {
+      try {
+        const line = JSON.parse(text) as HistoryLine;
+        return mergedRuns.includes(line.date) ? [] : [line];
+      } catch {
+        return [];
+      }
+    });
+}
+
+function createFileHistoryLoader(options: HistoryOptions, projectDir: string, mergedRuns: string[]): HistoryLoader {
+  const path = resolve(projectDir, options.path ?? HISTORY_FILE_PATH);
+  const runs = options.runs ?? HISTORY_RUN_COUNT;
+  return {
+    warm() {},
+    async load(summary) {
+      const family = readHistoryLines(path, mergedRuns).filter(line => line.name === historyName(summary));
+      const onBranch = family.filter(line => line.branch === summary.ci?.branch);
+      const lines = (onBranch.length > 0 ? onBranch : family).slice(-runs);
+      if (lines.length === 0) {
+        console.log(`[neo-reporter] No earlier runs of "${historyName(summary)}" in ${path} yet`);
+        return null;
+      }
+      return toRunHistory(summary, historyName(summary), basename(path), lines.map(toPastRun), fileTestKey);
+    },
+    record(summary) {
+      const lines = [...readHistoryLines(path, mergedRuns), toHistoryLine(summary)].slice(-runs * HISTORY_FILE_LINES_PER_RUN);
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, lines.map(line => `${JSON.stringify(line)}\n`).join(''), 'utf-8');
+    }
+  };
+}
+
+export function createBaselineHistoryLoader(baseline: ReportSummary, source: string): HistoryLoader {
+  return {
+    warm() {},
+    async load(summary) {
+      return toRunHistory(summary, historyName(baseline), source, [toPastRun(toHistoryLine(baseline))], fileTestKey);
+    }
+  };
+}
+
+export function createHistoryLoader(
+  options: HistoryOptions | false = {},
+  branch?: string,
+  projectDir = process.cwd(),
+  mergedRuns: string[] = []
+): HistoryLoader | null {
   if (options === false) return null;
+  if (options.provider === 'file') return createFileHistoryLoader(options, projectDir, mergedRuns);
   const target = adoHistoryTarget(options, branch);
   if (!target) return null;
   const candidates = target.runName ? Promise.resolve([]) : loadHistoryCandidates(target);
@@ -245,20 +388,20 @@ export function createHistoryLoader(options: HistoryOptions | false = {}, branch
       warmed = true;
       candidates.then(
         known => {
-          const family = pickRunFamily(known, [testName], target.runName);
+          const family = pickRunFamily(known, [historyKey(testName)], target.runName);
           if (family) familyRuns(family);
         },
         () => undefined
       );
     },
     async load(summary) {
-      const testNames = summary.specs.flatMap(spec => spec.tests.map(test => test.title.join(' ')));
+      const testNames = summary.specs.flatMap(spec => spec.tests.map(test => adoTestKey(spec, test)));
       const family = pickRunFamily(await candidates, testNames, target.runName);
       if (!family) {
         console.warn('[neo-reporter] Run history skipped: no Azure DevOps test run matches the tests of this report.');
         return null;
       }
-      return toRunHistory(summary, family, await familyRuns(family));
+      return toAdoRunHistory(summary, family, await familyRuns(family));
     }
   };
 }
@@ -272,10 +415,18 @@ export async function attachRunHistory(summary: ReportSummary, loader: HistoryLo
         globalThis.setTimeout(() => reject(new Error(`timed out after ${HISTORY_TIMEOUT_MS / 1000}s`)), HISTORY_TIMEOUT_MS).unref()
       )
     ]);
-    if (!history) return;
-    summary.history = history;
-    console.log(`[neo-reporter] Loaded ${history.runs.length} previous runs of "${history.family}" from Azure DevOps`);
+    if (history) {
+      summary.history = history;
+      console.log(
+        `[neo-reporter] Loaded ${history.runs.length} previous run${history.runs.length === 1 ? '' : 's'} of "${history.family}"${history.source ? ` from ${history.source}` : ''}`
+      );
+    }
   } catch (error) {
     console.warn(`[neo-reporter] Run history unavailable: ${error instanceof Error ? error.message : error}`);
+  }
+  try {
+    loader.record?.(summary);
+  } catch (error) {
+    console.warn(`[neo-reporter] Run history not saved: ${error instanceof Error ? error.message : error}`);
   }
 }

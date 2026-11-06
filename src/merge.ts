@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { computePassRate } from './format';
-import { attachRunHistory, createHistoryLoader } from './history';
+import { attachRunHistory, createBaselineHistoryLoader, createHistoryLoader } from './history';
 import { packageVersion } from './html/assets';
 import { needsHistory, writeReportOutputs, type ReportFiles } from './output';
 import { applyRedaction } from './redact';
@@ -63,7 +63,11 @@ function readReportJson(filePath: string): ReportSummary | null {
 export async function mergeReports(options: MergeOptions = {}): Promise<MergeResult | null> {
   validateOptions(options);
   const reportRoot = resolve(options.reportRoot ?? DEFAULT_REPORTS_DIR);
+  const baselinePath = options.baseline && resolve(options.baseline);
+  const baseline = baselinePath ? readReportJson(baselinePath) : null;
+  if (baselinePath && !baseline) throw new Error(`Cannot read the baseline report ${baselinePath}`);
   const summaries = (options.summaryFiles ?? findReportJsonFiles(reportRoot))
+    .filter(file => resolve(file) !== baselinePath)
     .map(readReportJson)
     .filter((summary): summary is ReportSummary => summary !== null && !summary.mergedFrom)
     .map(summary => applyRedaction(summary, options));
@@ -105,7 +109,13 @@ export async function mergeReports(options: MergeOptions = {}): Promise<MergeRes
   };
 
   const outputs = options.outputs ?? MERGE_OUTPUTS;
-  if (needsHistory(outputs)) await attachRunHistory(merged, createHistoryLoader(options.history, merged.ci?.branch));
+  if (needsHistory(outputs)) {
+    const loader =
+      baseline && baselinePath
+        ? createBaselineHistoryLoader(baseline, basename(baselinePath))
+        : createHistoryLoader(options.history, merged.ci?.branch, process.cwd(), summaries.map(summary => summary.timestamp));
+    await attachRunHistory(merged, loader);
+  }
   const outputDir = options.outputDir ? resolve(options.outputDir) : reportRoot;
   const files = writeReportOutputs(merged, outputDir, merged.suiteLabel || merged.projectName, outputs, options.reportUrl);
   console.log(`[neo-reporter] Merged ${summaries.length} reports`);

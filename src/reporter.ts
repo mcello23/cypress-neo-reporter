@@ -38,7 +38,7 @@ export function createNeoReporter(config: Cypress.PluginConfigOptions, options: 
       recordedTests.clear();
       try {
         if (needsHistory(options.outputs ?? REPORT_OUTPUTS)) {
-          historyLoader = createHistoryLoader(options.history, readCiInfo(config.projectRoot).branch);
+          historyLoader = createHistoryLoader(options.history, readCiInfo(config.projectRoot).branch, config.projectRoot);
         }
       } catch (error) {
         console.warn(`[neo-reporter] before:run failed: ${error}`);
@@ -49,7 +49,7 @@ export function createNeoReporter(config: Cypress.PluginConfigOptions, options: 
       [RECORD_TASK](data: RecordedTestPayload): null {
         try {
           warnIfBeforeRunReplaced();
-          historyLoader?.warm(data.fullTitle.replace(/ › /g, ' '));
+          historyLoader?.warm(data.fullTitle);
           const { spec, fullTitle, ...recorded } = data;
           const key = recordedTestKey(spec, fullTitle);
           const previous = recordedTests.get(key);

@@ -30,7 +30,9 @@ Options:
   --theme <theme>        auto, light or dark
   --outputs <list>       Comma-separated: html,markdown,junit,json (default: html,markdown)
   --report-url <url>     Link the Markdown summary points to
-  --no-history           Skip Azure DevOps run history
+  --history-file <path>  Read run history from this JSONL file and add the merged run to it
+  --baseline <file>      Compare with one earlier report JSON instead of run history
+  --no-history           Skip run history
   -h, --help             Show this help`;
 
 const THEMES: ReportTheme[] = ['auto', 'light', 'dark'];
@@ -74,6 +76,8 @@ async function merge(args: string[]): Promise<number> {
       theme: { type: 'string' },
       outputs: { type: 'string' },
       'report-url': { type: 'string' },
+      'history-file': { type: 'string' },
+      baseline: { type: 'string' },
       'no-history': { type: 'boolean' },
       help: { type: 'boolean', short: 'h' }
     }
@@ -95,7 +99,8 @@ async function merge(args: string[]): Promise<number> {
     theme: parseTheme(values.theme),
     outputs: parseOutputs(values.outputs),
     reportUrl: values['report-url'],
-    history: values['no-history'] ? false : undefined
+    history: values['no-history'] ? false : values['history-file'] ? { provider: 'file', path: values['history-file'] } : undefined,
+    baseline: values.baseline
   });
   return result ? 0 : 1;
 }

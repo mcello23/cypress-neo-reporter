@@ -31,6 +31,7 @@ export interface NeoReporterOptions extends Omit<ReporterOptions, 'historyLoader
 export interface MergeOptions extends NeoReporterOptions {
   reportRoot?: string;
   summaryFiles?: string[];
+  baseline?: string;
 }
 
 export interface RecordedTestPayload {
@@ -137,8 +138,10 @@ export interface HistoryRun {
 
 export interface RunHistory {
   family: string;
+  source?: string;
   runs: HistoryRun[];
   tests: Record<string, string>;
+  durations?: Record<string, number>;
 }
 
 export interface ReportSummary {
@@ -168,7 +171,8 @@ export interface ReportSummary {
 }
 
 export interface HistoryOptions {
-  provider?: 'azure-devops';
+  provider?: 'azure-devops' | 'file';
+  path?: string;
   organization?: string;
   project?: string;
   runName?: string;
@@ -179,4 +183,5 @@ export interface HistoryOptions {
 export interface HistoryLoader {
   warm(testName: string): void;
   load(summary: ReportSummary): Promise<RunHistory | null>;
+  record?(summary: ReportSummary): void;
 }

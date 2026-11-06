@@ -1,6 +1,10 @@
 import { escapeXml, firstLine } from './format';
 import type { ReportSummary } from './types';
 
+export function historyKey(testName: string): string {
+  return testName.split(' › ').join(' ');
+}
+
 /**
  * Generate standard JUnit XML for Azure DevOps Test Results publishing
  */

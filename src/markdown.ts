@@ -1,4 +1,4 @@
-import { writeFileSync } from 'node:fs';
+import { appendFileSync, writeFileSync } from 'node:fs';
 import { ciSourceLine } from './ci';
 import { firstLine, formatDuration } from './format';
 import {
@@ -69,8 +69,10 @@ export function generateMarkdownSummary(summary: ReportSummary, reportUrl?: stri
 }
 
 export function writeMarkdownSummary(filePath: string, summary: ReportSummary, reportUrl?: string): void {
-  writeFileSync(filePath, generateMarkdownSummary(summary, reportUrl), 'utf-8');
+  const markdown = generateMarkdownSummary(summary, reportUrl || (process.env.GITHUB_ACTIONS ? summary.ci?.buildUrl : undefined));
+  writeFileSync(filePath, markdown, 'utf-8');
   if (process.env.TF_BUILD) console.log(`##vso[task.uploadsummary]${filePath}`);
+  if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, markdown, 'utf-8');
 }
 
 export function buildRunSummaryText(summary: ReportSummary, title: string, groups: FailureGroup[]): string {

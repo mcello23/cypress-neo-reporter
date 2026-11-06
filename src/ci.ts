@@ -14,8 +14,37 @@ export function adoCollectionUrl(): string | undefined {
   return url?.replace(/\/?$/, '/');
 }
 
+function readPullRequestHeadSha(eventPath: string): string | undefined {
+  try {
+    const event = JSON.parse(readFileSync(eventPath, 'utf-8')) as { pull_request?: { head?: { sha?: string } } };
+    return event.pull_request?.head?.sha;
+  } catch {
+    return undefined;
+  }
+}
+
 export function readCiInfo(projectDir: string): CiInfo {
   const env = process.env;
+  if (env.GITHUB_ACTIONS) {
+    const repositoryUrl = `${env.GITHUB_SERVER_URL}/${env.GITHUB_REPOSITORY}`;
+    const commit = (env.GITHUB_EVENT_PATH && readPullRequestHeadSha(env.GITHUB_EVENT_PATH)) || env.GITHUB_SHA;
+    return {
+      branch: env.GITHUB_HEAD_REF || env.GITHUB_REF_NAME,
+      commit,
+      commitUrl: commit ? `${repositoryUrl}/commit/${commit}` : undefined,
+      build: env.GITHUB_RUN_NUMBER ? `#${env.GITHUB_RUN_NUMBER}` : undefined,
+      buildUrl: `${repositoryUrl}/actions/runs/${env.GITHUB_RUN_ID}`
+    };
+  }
+  if (env.GITLAB_CI) {
+    return {
+      branch: env.CI_MERGE_REQUEST_SOURCE_BRANCH_NAME || env.CI_COMMIT_REF_NAME,
+      commit: env.CI_COMMIT_SHA,
+      commitUrl: env.CI_COMMIT_SHA && env.CI_PROJECT_URL ? `${env.CI_PROJECT_URL}/-/commit/${env.CI_COMMIT_SHA}` : undefined,
+      build: env.CI_PIPELINE_ID ? `#${env.CI_PIPELINE_ID}` : undefined,
+      buildUrl: env.CI_PIPELINE_URL
+    };
+  }
   const collectionUrl = adoCollectionUrl();
   const commit = env.BUILD_SOURCEVERSION || readGit(projectDir, ['rev-parse', 'HEAD']);
   return {

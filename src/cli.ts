@@ -7,7 +7,7 @@ import { checkGate, FAIL_ON, QUARANTINE_FILE_NAME, readQuarantine, type FailOn, 
 import { packageVersion } from './html/assets';
 import { mergeReports } from './merge';
 import { notify, type Webhooks } from './notify';
-import { DEFAULT_REPORTS_DIR, REPORT_OUTPUTS, type ReportOutput, type ReportSummary, type ReportTheme } from './types';
+import { DEFAULT_REPORTS_DIR, REPORT_OUTPUTS, REPORT_THEMES, type ReportOutput, type ReportSummary, type ReportTheme } from './types';
 
 const USAGE = `Usage: neo-reporter <command> [options]
 
@@ -73,8 +73,6 @@ ${NOTIFY_HELP}
 
 Exit codes: 0 posted, 1 a post failed or the report cannot be read, 2 usage error.`;
 
-const THEMES: ReportTheme[] = ['auto', 'light', 'dark'];
-
 class UsageError extends Error {}
 
 function isUsageError(error: unknown): error is Error {
@@ -96,7 +94,7 @@ function parseOutputs(value?: string): ReportOutput[] | undefined {
 
 function parseTheme(value?: string): ReportTheme | undefined {
   if (!value) return undefined;
-  if (!THEMES.includes(value as ReportTheme)) throw new UsageError(`Unknown theme: ${value}`);
+  if (!REPORT_THEMES.includes(value as ReportTheme)) throw new UsageError(`Unknown theme: ${value}`);
   return value as ReportTheme;
 }
 

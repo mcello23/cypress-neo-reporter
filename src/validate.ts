@@ -1,7 +1,7 @@
 import { assertTimeZone } from './format';
-import { REPORT_OUTPUTS, type MergeOptions, type ReportTheme } from './types';
+import { REPORT_OUTPUTS, REPORT_THEMES, type MergeOptions } from './types';
 
-export const KNOWN_OPTION_KEYS: string[] = [
+const KNOWN_OPTION_KEYS = [
   'projectName',
   'reportName',
   'teamName',
@@ -16,15 +16,12 @@ export const KNOWN_OPTION_KEYS: string[] = [
   'includeTestCode',
   'maxEmbedMb',
   'assets',
-  'keepVideos',
-  'reportRoot',
-  'summaryFiles',
-  'baseline'
+  'keepVideos'
 ];
 
-const HISTORY_PROVIDERS = ['azure-devops', 'file'];
+export const MERGE_OPTION_KEYS = [...KNOWN_OPTION_KEYS, 'reportRoot', 'summaryFiles', 'baseline'];
 
-const THEMES: readonly ReportTheme[] = ['auto', 'light', 'dark'];
+const HISTORY_PROVIDERS = ['azure-devops', 'file'];
 
 const ASSET_MODES = ['inline', 'folder'];
 
@@ -33,12 +30,22 @@ function assertPositiveInteger(name: string, value: unknown): void {
   throw new Error(`[neo-reporter] ${name} must be a whole number above 0, got ${JSON.stringify(value)}.`);
 }
 
-export function validateOptions(options: MergeOptions): void {
-  const unknown = Object.keys(options).filter(key => !KNOWN_OPTION_KEYS.includes(key));
+function isValidRedact(redact: unknown): boolean {
+  if (redact === undefined || redact === false) return true;
+  if (typeof redact !== 'object' || redact === null) return false;
+  const { patterns, replace } = redact as { patterns?: unknown; replace?: unknown };
+  return (
+    (patterns === undefined || (Array.isArray(patterns) && patterns.every(pattern => pattern instanceof RegExp))) &&
+    (replace === undefined || typeof replace === 'function')
+  );
+}
+
+export function validateOptions(options: MergeOptions, knownKeys: readonly string[] = KNOWN_OPTION_KEYS): void {
+  const unknown = Object.keys(options).filter(key => !knownKeys.includes(key));
   if (unknown.length) {
-    console.warn(`[neo-reporter] Ignoring unknown option ${unknown.map(key => `"${key}"`).join(', ')}. Known options: ${KNOWN_OPTION_KEYS.join(', ')}.`);
+    console.warn(`[neo-reporter] Ignoring unknown option ${unknown.map(key => `"${key}"`).join(', ')}. Known options: ${knownKeys.join(', ')}.`);
   }
-  const { outputs, theme, history, assets, maxEmbedMb } = options;
+  const { outputs, theme, history, assets, maxEmbedMb, redact } = options;
   if (outputs !== undefined) {
     if (!Array.isArray(outputs)) {
       throw new Error(`[neo-reporter] outputs must be an array such as ['html', 'junit'], got ${JSON.stringify(outputs)}.`);
@@ -48,14 +55,17 @@ export function validateOptions(options: MergeOptions): void {
       throw new Error(`[neo-reporter] Unknown output ${invalid.map(output => JSON.stringify(output)).join(', ')}. Use any of ${REPORT_OUTPUTS.join(', ')}.`);
     }
   }
-  if (theme !== undefined && !THEMES.includes(theme)) {
-    throw new Error(`[neo-reporter] Unknown theme ${JSON.stringify(theme)}. Use ${THEMES.join(', ')}.`);
+  if (theme !== undefined && !REPORT_THEMES.includes(theme)) {
+    throw new Error(`[neo-reporter] Unknown theme ${JSON.stringify(theme)}. Use ${REPORT_THEMES.join(', ')}.`);
   }
   if (assets !== undefined && !ASSET_MODES.includes(assets)) {
     throw new Error(`[neo-reporter] Unknown assets ${JSON.stringify(assets)}. Use ${ASSET_MODES.join(' or ')}.`);
   }
   if (maxEmbedMb !== undefined && !(typeof maxEmbedMb === 'number' && maxEmbedMb >= 0)) {
     throw new Error(`[neo-reporter] maxEmbedMb must be a number of 0 or more, got ${JSON.stringify(maxEmbedMb)}.`);
+  }
+  if (!isValidRedact(redact)) {
+    throw new Error(`[neo-reporter] redact must be false or an object with optional patterns (an array of RegExp) and replace (a function), got ${JSON.stringify(redact)}.`);
   }
   if (history) {
     if (history.provider !== undefined && !HISTORY_PROVIDERS.includes(history.provider)) {

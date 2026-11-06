@@ -3,10 +3,13 @@ import type { ReporterOptions, ReportSummary, TestData } from './types';
 const REDACTED = '[redacted]';
 
 const DEFAULT_PATTERNS = [
+  /(?<=\bset-cookie["']?\s*:\s*\[\s*(?:"[^"]*",\s*)*")[^"\r\n]+/gi,
   /(?<=\b(?:authorization|cookie)["']?\s*:[\s[]*["']?)[^"'\s[][^"'\r\n]*/gi,
   /(?<=\bBearer\s+)[\w.~+/-]+=*/g,
   /\beyJ[\w-]+\.[\w-]+\.[\w-]+/g,
-  /(?<=:\/\/)[^\s/?#@]+(?=@)/g
+  /(?<=:\/\/)[^\s/?#@]+(?=@)/g,
+  /(?<="[^"\r\n]*(?:pass(?:word)?|secret|token|api[-_]?key|client_secret)[^"\r\n]*"\s*:\s*")(?:[^"\\\r\n]|\\.)+/gi,
+  /(?<=[?&#](?:token|access_token|sig|code|key|password)=)[^&#\s"'<>]+/gi
 ];
 
 export function applyRedaction(

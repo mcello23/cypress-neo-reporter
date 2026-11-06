@@ -6,8 +6,8 @@ import { packageVersion } from './html/assets';
 import { needsHistory, writeReportOutputs, type ReportFiles } from './output';
 import { applyRedaction } from './redact';
 import { evidenceFiles } from './summary';
-import { DEFAULT_REPORTS_DIR, MERGE_OUTPUTS, SCHEMA_VERSION, type EmbeddedFile, type MergeOptions, type ReportSummary } from './types';
-import { validateOptions } from './validate';
+import { DEFAULT_REPORTS_DIR, MERGE_OUTPUTS, REPORT_THEMES, SCHEMA_VERSION, type EmbeddedFile, type MergeOptions, type ReportSummary } from './types';
+import { MERGE_OPTION_KEYS, validateOptions } from './validate';
 
 export interface MergeResult {
   summary: ReportSummary;
@@ -23,13 +23,12 @@ function findReportJsonFiles(dir: string): string[] {
   });
 }
 
-const THEMES = ['auto', 'light', 'dark'];
 const TEST_STATES = ['passed', 'flaky', 'failed', 'pending', 'skipped'];
 const isNumber = (value: unknown) => typeof value === 'number';
 
 function hasValidFields(data: ReportSummary): boolean {
   return (
-    (data.theme === undefined || THEMES.includes(data.theme)) &&
+    (data.theme === undefined || REPORT_THEMES.includes(data.theme)) &&
     [data.totalPassed, data.totalFailed, data.totalPending, data.totalSkipped, data.totalDurationMs].every(isNumber) &&
     data.specs.every(
       spec =>
@@ -74,7 +73,7 @@ function readReportJson(filePath: string): ReportSummary | null {
 }
 
 export async function mergeReports(options: MergeOptions = {}): Promise<MergeResult | null> {
-  validateOptions(options);
+  validateOptions(options, MERGE_OPTION_KEYS);
   const reportRoot = resolve(options.reportRoot ?? DEFAULT_REPORTS_DIR);
   const baselinePath = options.baseline && resolve(options.baseline);
   const baseline = baselinePath ? readReportJson(baselinePath) : null;

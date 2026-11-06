@@ -13,7 +13,7 @@ export type {
   ReportTheme
 } from './types';
 export type { ReportFiles } from './output';
-export { neoReporter } from './reporter';
+export { neoReporter, createNeoReporter } from './reporter';
 export { mergeReports, type MergeResult } from './merge';
 export { generateHtmlReport } from './html';
 export { generateMarkdownSummary } from './markdown';

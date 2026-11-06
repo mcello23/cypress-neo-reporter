@@ -23,6 +23,7 @@ function cli(...args: string[]) {
 
 test('the entry points export only the public API', () => {
   assert.deepEqual(Object.keys(api).sort(), [
+    'createNeoReporter',
     'generateHtmlReport',
     'generateJUnitXml',
     'generateMarkdownSummary',
@@ -30,7 +31,7 @@ test('the entry points export only the public API', () => {
     'mergeReports',
     'neoReporter'
   ]);
-  assert.deepEqual(Object.keys(plugin).sort(), ['generateReports', 'mergeReports', 'neoReporter']);
+  assert.deepEqual(Object.keys(plugin).sort(), ['createNeoReporter', 'generateReports', 'mergeReports', 'neoReporter']);
   assert.equal(plugin.generateReports, api.generateReports);
   const hidesInternals: Extract<keyof NonNullable<Parameters<typeof generateReports>[1]>, 'stepsFilePath' | 'historyLoader'> extends never
     ? true

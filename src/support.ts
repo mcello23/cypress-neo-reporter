@@ -1,5 +1,5 @@
 /// <reference types="cypress" preserve="true" />
-import { RECORD_TASK } from './task';
+import { PLUGIN_FLAG, RECORD_TASK } from './task';
 
 export type StepPhase = 'VISIT' | 'FIND' | 'STEP' | 'CHECK' | 'INFO';
 
@@ -35,6 +35,12 @@ let currentBusinessGoal: { goal: string; persona: string } | null = null;
 let currentTestStartedAt = '';
 let previousAttemptEndedAt = Date.now();
 let currentAttemptLeadMs = 0;
+let missingPluginLogged = false;
+
+function pluginRegistered(): boolean {
+  const cypress = Cypress as unknown as { expose?: (key: string) => unknown; env: (key: string) => unknown };
+  return Boolean(cypress.expose ? cypress.expose(PLUGIN_FLAG) : cypress.env(PLUGIN_FLAG));
+}
 
 function pushDiagnostic<T>(list: T[], item: T): void {
   list.push(item);
@@ -88,9 +94,20 @@ afterEach(function () {
   if (!test) return;
   const failed = test.state === 'failed';
   if (!failed && currentTestSteps.length === 0 && !currentBusinessGoal) return;
+  if (!pluginRegistered()) {
+    if (!missingPluginLogged) {
+      missingPluginLogged = true;
+      Cypress.log({
+        name: 'neo-reporter',
+        message: ['Steps are not recorded: call neoReporter(on, config) in setupNodeEvents and return the config.']
+      });
+    }
+    return;
+  }
   cy.task(
     RECORD_TASK,
     {
+      spec: Cypress.spec.relative,
       fullTitle: test.titlePath().join(' › '),
       startedAt: currentTestStartedAt,
       attempt,
@@ -337,73 +354,18 @@ const installStepsOnlyToggle = (doc: Document): void => {
 
 const injectRunnerStyles = (): void => {
   if (typeof window === 'undefined') return;
-
-  const styleId = 'neo-runner-styles';
-  const targetDocs: Document[] = [];
-  const seenDocs = new Set<Document>();
-
-  const collectDocs = (win: Window | null | undefined): void => {
-    if (!win) return;
-    try {
-      const doc = win.document;
-      if (doc && !seenDocs.has(doc)) {
-        seenDocs.add(doc);
-        targetDocs.push(doc);
-
-        const iframes = doc.querySelectorAll('iframe');
-        iframes.forEach(iframe => {
-          try {
-            if (iframe.contentWindow) {
-              collectDocs(iframe.contentWindow);
-            } else if (iframe.contentDocument && !seenDocs.has(iframe.contentDocument)) {
-              seenDocs.add(iframe.contentDocument);
-              targetDocs.push(iframe.contentDocument);
-            }
-          } catch {
-            // Restricted iframe fallback
-          }
-        });
-      }
-    } catch {
-      // Cross-origin fallback
+  try {
+    const doc = window.top?.document;
+    if (!doc) return;
+    let style = doc.getElementById('neo-runner-styles') as HTMLStyleElement | null;
+    if (!style) {
+      style = doc.createElement('style');
+      style.id = 'neo-runner-styles';
+      (doc.head || doc.documentElement).appendChild(style);
     }
-  };
-
-  collectDocs(window);
-
-  if (typeof window.top !== 'undefined' && window.top !== window) {
-    try {
-      collectDocs(window.top);
-    } catch {
-      // Cross-origin fallback
-    }
-  }
-
-  if (typeof window.parent !== 'undefined' && window.parent !== window && window.parent !== window.top) {
-    try {
-      collectDocs(window.parent);
-    } catch {
-      // Cross-origin fallback
-    }
-  }
-
-  for (const doc of targetDocs) {
-    try {
-      let style = doc.getElementById(styleId) as HTMLStyleElement | null;
-      if (!style) {
-        style = doc.createElement('style');
-        style.id = styleId;
-        const targetParent = doc.head || doc.body || doc.documentElement;
-        if (targetParent) {
-          targetParent.appendChild(style);
-        }
-      }
-      if (style && style.textContent !== RUNNER_STYLES) {
-        style.textContent = RUNNER_STYLES;
-      }
-      installStepsOnlyToggle(doc);
-    } catch {
-      // Ignore cross-origin access errors
-    }
+    if (style.textContent !== RUNNER_STYLES) style.textContent = RUNNER_STYLES;
+    installStepsOnlyToggle(doc);
+  } catch (error) {
+    void error;
   }
 };

@@ -1,13 +1,16 @@
 import { mkdirSync, existsSync, rmSync, renameSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { toScreenshotSafeName } from './format';
-import type { RecordedTestsMap } from './types';
+import type { RecordedTestPayload } from './types';
 
 export const MAX_EMBEDDED_VIDEO_CHARS = 150 * 1024 * 1024;
 const FAILED_VIDEO_CRF = 30;
 const CLIP_LEAD_MS = 0;
 const CLIP_TAIL_MS = 1000;
+const FFMPEG_TIMEOUT_MS = 5 * 60 * 1000;
+const MAX_CLIP_NAME_LENGTH = 80;
 export const recordedSpecVideos = new Map<string, string>();
 
 interface VideoTools {
@@ -29,18 +32,20 @@ export function bundledVideoTools(cypressBinaryRoot: string): VideoTools | null 
 function readVideoDurationMs(ffprobePath: string | null, videoPath: string): number | null {
   if (!ffprobePath) return null;
   const args = ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', videoPath];
-  const result = spawnSync(ffprobePath, args, { encoding: 'utf-8' });
+  const result = spawnSync(ffprobePath, args, { encoding: 'utf-8', timeout: FFMPEG_TIMEOUT_MS });
   const seconds = Number(result.stdout?.trim());
   return result.status === 0 && seconds > 0 ? seconds * 1000 : null;
 }
 
 function runFfmpeg(ffmpegPath: string, args: string[]): boolean {
-  return spawnSync(ffmpegPath, ['-y', ...args], { stdio: 'ignore' }).status === 0;
+  return spawnSync(ffmpegPath, ['-y', ...args], { stdio: 'ignore', timeout: FFMPEG_TIMEOUT_MS }).status === 0;
 }
 
 function cutClip(ffmpegPath: string, inputPath: string, outputPath: string, range: { start: number; end: number }): boolean {
   const seek = ['-ss', String(range.start), '-t', String(range.end - range.start)];
-  return runFfmpeg(ffmpegPath, [...seek, '-i', inputPath, '-c', 'copy', outputPath]);
+  if (runFfmpeg(ffmpegPath, [...seek, '-i', inputPath, '-c', 'copy', outputPath])) return true;
+  rmSync(outputPath, { force: true });
+  return false;
 }
 
 function testVideoDir(specVideoPath: string): string {
@@ -48,7 +53,12 @@ function testVideoDir(specVideoPath: string): string {
 }
 
 export function testVideoPath(specVideoPath: string, title: string[]): string {
-  return join(testVideoDir(specVideoPath), `${toScreenshotSafeName(title.join(' '))}.mp4`);
+  const name = toScreenshotSafeName(title.join(' '));
+  const fileName =
+    name.length > MAX_CLIP_NAME_LENGTH
+      ? `${Array.from(name).slice(0, MAX_CLIP_NAME_LENGTH).join('')}-${createHash('sha1').update(name).digest('hex').slice(0, 8)}`
+      : name;
+  return join(testVideoDir(specVideoPath), `${fileName}.mp4`);
 }
 
 export function compressVideo(ffmpegPath: string, videoPath: string): void {
@@ -65,18 +75,19 @@ export function cutFailedTestVideos(
   tools: VideoTools,
   specVideoPath: string,
   tests: CypressCommandLine.TestResult[],
-  recorded: RecordedTestsMap
+  recordedAttempt: (test: CypressCommandLine.TestResult) => RecordedTestPayload['attempt']
 ): boolean {
   const testsMs = tests.reduce((sum, test) => sum + (test.duration || 0), 0);
   if (testsMs === 0) return false;
   const videoMs = readVideoDurationMs(tools.ffprobe, specVideoPath);
-  const preRollMs = videoMs ? Math.max(0, videoMs - testsMs) : 0;
+  if (!videoMs) return false;
+  const preRollMs = Math.max(0, videoMs - testsMs);
   const clips: Array<{ path: string; start: number; end: number }> = [];
   let elapsedMs = preRollMs;
   for (const test of tests) {
     const durationMs = test.duration || 0;
     if (test.attempts?.some(attempt => attempt.state === 'failed')) {
-      const firstAttempt = test.attempts.length > 1 ? recorded[test.title.join(' › ')]?.attempt : undefined;
+      const firstAttempt = test.attempts.length > 1 ? recordedAttempt(test) : undefined;
       const clipMs = firstAttempt ? firstAttempt.leadMs + firstAttempt.durationMs : durationMs;
       clips.push({
         path: testVideoPath(specVideoPath, test.title),
@@ -87,9 +98,6 @@ export function cutFailedTestVideos(
     elapsedMs += durationMs;
   }
   if (clips.length === 0) return false;
-  const clipDir = testVideoDir(specVideoPath);
-  mkdirSync(clipDir, { recursive: true });
-  if (clips.every(clip => cutClip(tools.ffmpeg, specVideoPath, clip.path, clip))) return true;
-  rmSync(clipDir, { recursive: true, force: true });
-  return false;
+  mkdirSync(testVideoDir(specVideoPath), { recursive: true });
+  return clips.map(clip => cutClip(tools.ffmpeg, specVideoPath, clip.path, clip)).every(Boolean);
 }

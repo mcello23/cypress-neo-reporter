@@ -19,11 +19,12 @@ export interface ReporterOptions {
   outputs?: readonly ReportOutput[];
   history?: HistoryOptions | false;
   reportUrl?: string;
-  stepsFilePath?: string;
   historyLoader?: HistoryLoader | null;
 }
 
-export type NeoReporterOptions = Omit<ReporterOptions, 'stepsFilePath' | 'historyLoader'>;
+export interface NeoReporterOptions extends Omit<ReporterOptions, 'historyLoader'> {
+  keepVideos?: boolean;
+}
 
 export interface MergeOptions extends NeoReporterOptions {
   reportRoot?: string;
@@ -31,6 +32,7 @@ export interface MergeOptions extends NeoReporterOptions {
 }
 
 export interface RecordedTestPayload {
+  spec: string;
   fullTitle: string;
   startedAt?: string;
   attempt?: { leadMs: number; durationMs: number };
@@ -48,7 +50,7 @@ export interface NetworkFailure {
   timestamp: string;
 }
 
-export type RecordedTestsMap = Record<string, Omit<RecordedTestPayload, 'fullTitle'>>;
+export type RecordedTestsMap = Map<string, Omit<RecordedTestPayload, 'spec' | 'fullTitle'>>;
 
 export interface TestAttempt {
   state: string;

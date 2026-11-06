@@ -78,23 +78,21 @@ export function writeReportOutputs(
   mkdirSync(outputDir, { recursive: true });
   const base = join(outputDir, reportFileBase(baseName));
   const files: ReportFiles = {};
-  if (outputs.includes('json')) {
-    files.json = `${base}.json`;
-    writeReportFile(files.json, summary, s => JSON.stringify(s, null, 2));
-  }
-  if (outputs.includes('junit')) {
-    files.junit = `${base}.junit.xml`;
-    writeFileSync(files.junit, generateJUnitXml(summary), 'utf-8');
-  }
-  if (outputs.includes('html')) {
-    files.html = `${base}.html`;
-    writeReportFile(files.html, summary, generateHtmlReport);
-  }
-  if (outputs.includes('markdown')) {
-    files.markdown = `${base}.summary.md`;
-    writeMarkdownSummary(files.markdown, summary, reportUrl);
-  }
+  const write = (output: ReportOutput, file: string, writeFile: (file: string) => void): void => {
+    if (!outputs.includes(output)) return;
+    try {
+      writeFile(file);
+      files[output] = file;
+    } catch (error) {
+      console.warn(`[neo-reporter] Writing ${file} failed: ${error}`);
+    }
+  };
+  write('json', `${base}.json`, file => writeReportFile(file, summary, s => JSON.stringify(s, null, 2)));
+  write('junit', `${base}.junit.xml`, file => writeFileSync(file, generateJUnitXml(summary), 'utf-8'));
+  write('html', `${base}.html`, file => writeReportFile(file, summary, generateHtmlReport));
+  write('markdown', `${base}.summary.md`, file => writeMarkdownSummary(file, summary, reportUrl));
   Object.values(files).forEach(file => console.log(`[neo-reporter] Wrote ${file}`));
+  if (Object.keys(files).length === 0) console.warn(`[neo-reporter] No report file written to ${outputDir}.`);
   return files;
 }
 

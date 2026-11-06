@@ -1,11 +1,12 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { assertTimeZone, computePassRate } from './format';
+import { computePassRate } from './format';
 import { attachRunHistory, createHistoryLoader } from './history';
 import { packageVersion } from './html/assets';
 import { needsHistory, writeReportOutputs, type ReportFiles } from './output';
 import { capEmbeddedVideos } from './summary';
 import { DEFAULT_REPORTS_DIR, MERGE_OUTPUTS, SCHEMA_VERSION, STEPS_FILE_NAME, type MergeOptions, type ReportSummary } from './types';
+import { validateOptions } from './validate';
 
 export interface MergeResult {
   summary: ReportSummary;
@@ -36,7 +37,7 @@ function readReportJson(filePath: string): ReportSummary | null {
 }
 
 export async function mergeReports(options: MergeOptions = {}): Promise<MergeResult | null> {
-  assertTimeZone(options.timeZone);
+  validateOptions(options);
   const reportRoot = resolve(options.reportRoot ?? DEFAULT_REPORTS_DIR);
   const summaries = (options.summaryFiles ?? findReportJsonFiles(reportRoot))
     .map(readReportJson)

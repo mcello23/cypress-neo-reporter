@@ -56,11 +56,18 @@ export function toSourceSpecPath(specPath: string): string {
   return specPath.replace(/\\/g, '/');
 }
 
+const ANSI_SEQUENCE = /\u001b\[[0-9;]*[A-Za-z]/g;
+const INVALID_XML_CHARS = /[^\t\n\r\u0020-\uD7FF\uE000-\uFFFD\u{10000}-\u{10FFFF}]/gu;
+
+export function stripAnsi(text: string): string {
+  return text.replace(ANSI_SEQUENCE, '');
+}
+
 /**
  * Escape XML special characters
  */
 export function escapeXml(str: string): string {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+  return str.replace(INVALID_XML_CHARS, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 }
 
 export function firstLine(text?: string | null): string {

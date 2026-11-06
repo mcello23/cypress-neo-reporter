@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { neoReporter } from '../src';
@@ -44,9 +44,10 @@ test('neoReporter writes the reports through the events it registers', async () 
     ]
   });
 
-  for (const extension of ['html', 'json', 'junit.xml', 'summary.md']) {
+  for (const extension of ['html', 'junit.xml', 'summary.md']) {
     assert.ok(existsSync(join(projectRoot, `cypress/reports/plugin.${extension}`)), extension);
   }
+  assert.ok(readdirSync(join(projectRoot, 'cypress/reports')).some(name => /^plugin\.[0-9a-f]{8}\.json$/.test(name)), 'json');
 });
 
 test('neo-reporter exits with an error on an unknown output or theme', () => {

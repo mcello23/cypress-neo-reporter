@@ -100,7 +100,7 @@ test('html report declares an offline-only Content-Security-Policy before any sc
     "default-src 'none'",
     "connect-src 'none'",
     "img-src 'self' data: blob: file:",
-    "media-src 'self' data: blob:",
+    "media-src 'self' data: blob: file:",
     "form-action 'none'",
     "base-uri 'none'"
   ]) {

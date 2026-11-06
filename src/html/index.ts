@@ -1,3 +1,4 @@
+import { isAbsolute } from 'node:path';
 import { escapeHtml, firstLine, formatDuration, formatTimestamp, machineTimeZone } from '../format';
 import { buildRunSummaryText } from '../markdown';
 import {
@@ -16,7 +17,7 @@ import {
   type PromptKind
 } from '../prompts';
 import { hasFailureEvidence } from '../summary';
-import type { ReportSummary, SpecData, TestData } from '../types';
+import type { EmbeddedFile, ReportSummary, SpecData, TestData } from '../types';
 import { packageVersion, readPlyrAssets } from './assets';
 import { REPORT_CSS } from './styles';
 
@@ -66,7 +67,7 @@ const CONTENT_SECURITY_POLICY = [
   "script-src 'unsafe-inline'",
   "style-src 'unsafe-inline'",
   "img-src 'self' data: blob: file:",
-  "media-src 'self' data: blob:",
+  "media-src 'self' data: blob: file:",
   "font-src data:",
   "connect-src 'none'",
   "form-action 'none'",
@@ -80,6 +81,25 @@ function dataBlock(id: string, content: string): string {
 /** JSON inside a script tag must never contain "</script" or "<!--", so every "<" is escaped. */
 function scriptSafeJson(value: unknown): string {
   return JSON.stringify(value).replace(/</g, '\\u003c');
+}
+
+function isPlayable(video?: EmbeddedFile): boolean {
+  return Boolean(video && (video.base64 || !isAbsolute(video.path)));
+}
+
+function videoEvidence(title: string, video: EmbeddedFile, id: string): string {
+  return `
+              <div class="video-evidence">
+                <div class="evidence-title">${title}:</div>
+                ${
+                  video.base64
+                    ? `<div class="video-player" data-video-id="${id}"></div>`
+                    : isPlayable(video)
+                      ? `<div class="video-player" data-video-src="${escapeHtml(video.path)}"></div>`
+                      : `<div>${escapeHtml(video.name)} is not embedded (report size limit); see the run's videos folder.</div>`
+                }
+              </div>
+            `;
 }
 
 /**
@@ -103,12 +123,17 @@ export function generateHtmlReport(summary: ReportSummary): string {
   const failedTests = collectTestsByState(summary, 'failed');
   const flakyTests = collectTestsByState(summary, 'flaky');
   const flakyCount = summary.specs.reduce((count, spec) => count + spec.tests.filter(t => t.state === 'flaky').length, 0);
-  const plyrAssets = summary.specs.some(spec => spec.video?.base64 || spec.tests.some(t => t.video?.base64)) ? readPlyrAssets() : null;
+  const plyrAssets = summary.specs.some(spec => isPlayable(spec.video) || spec.tests.some(t => isPlayable(t.video))) ? readPlyrAssets() : null;
   const aiPrompt = buildAiTriagePrompt(summary, 'failed');
   const aiFlakyPrompt = buildAiTriagePrompt(summary, 'flaky');
   const copyIconSvg = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
   const linkIconSvg = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-link"/></svg>`;
   const failureGroups = collectFailureGroups(summary);
+
+  const mixed = (pick: (spec: SpecData) => string | undefined) => new Set(summary.specs.map(pick).filter(Boolean)).size > 1;
+  const mixedBrowsers = mixed(spec => spec.browser);
+  const mixedTestingTypes = mixed(spec => spec.testingType);
+  const runLabel = (spec: SpecData) => [mixedBrowsers && spec.browser, mixedTestingTypes && spec.testingType].filter(Boolean).join(' · ');
 
   const groupIndexByTest = new Map<TestData, number>();
   failureGroups.forEach((group, idx) => group.tests.forEach(({ test }) => groupIndexByTest.set(test, idx + 1)));
@@ -296,43 +321,13 @@ export function generateHtmlReport(summary: ReportSummary): string {
             `
                 : ''
             }
-            ${
-              t.video?.base64
-                ? `
-              <div class="video-evidence">
-                <div class="evidence-title">Test Recording:</div>
-                <div class="video-player" data-video-id="test-video-${specIdx}-${testIdx}"></div>
-              </div>
-            `
-                : t.video
-                  ? `
-              <div class="video-evidence">
-                <div class="evidence-title">Test Recording:</div>
-                <div>${escapeHtml(t.video.name)} is not embedded (report size limit); see the run's videos folder.</div>
-              </div>
-            `
-                  : spec.video?.base64
-                    ? `
-              <div class="video-evidence">
-                <div class="evidence-title">Spec Recording:</div>
-                <div class="video-player" data-video-id="spec-video-${specIdx}"></div>
-              </div>
-            `
-                    : spec.video
-                      ? `
-              <div class="video-evidence">
-                <div class="evidence-title">Spec Recording:</div>
-                <div>${escapeHtml(spec.video.name)} is not embedded (report size limit); see the run's videos folder.</div>
-              </div>
-            `
-                      : ''
-            }
+            ${t.video ? videoEvidence('Test Recording', t.video, `test-video-${specIdx}-${testIdx}`) : spec.video ? videoEvidence('Spec Recording', spec.video, `spec-video-${specIdx}`) : ''}
           </div>
         `
             : '';
 
           return `
-          <div class="test-row state-${t.state}" data-state="${t.state}" data-title="${escapeHtml(t.fullTitle.toLowerCase())}" data-error="${escapeHtml(firstLine(t.displayError).toLowerCase())}" data-group="${groupIndexByTest.get(t) ?? ''}" data-history="${testHistoryStatus ?? ''}">
+          <div class="test-row state-${t.state}" data-state="${t.state}" data-title="${escapeHtml(t.fullTitle.toLowerCase())}" data-error="${escapeHtml(firstLine(t.displayError).toLowerCase())}" data-group="${groupIndexByTest.get(t) ?? ''}" data-history="${testHistoryStatus ?? ''}"${t.tags?.length ? ` data-tags="${escapeHtml(t.tags.join(' ').toLowerCase())}"` : ''}>
             <div class="test-row-main" onclick="toggleTestDetails('test-${specIdx}-${testIdx}')">
               <div class="test-state-col">
                 ${stateBadge}
@@ -377,6 +372,7 @@ export function generateHtmlReport(summary: ReportSummary): string {
             </div>
           </div>
           <div class="spec-meta-group">
+            ${runLabel(spec) ? `<span class="spec-owner-badge" title="Browser and testing type of this run">${escapeHtml(runLabel(spec))}</span>` : ''}
             ${spec.owner ? `<span class="spec-owner-badge" title="Author with the most commits to this spec">${escapeHtml(spec.owner)}</span>` : ''}
             <span class="spec-time-badge">${formatDuration(spec.duration)}</span>
             <span class="spec-count-badge">${spec.passes}/${spec.total} passed</span>
@@ -501,7 +497,8 @@ export function generateHtmlReport(summary: ReportSummary): string {
     owners:
       '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
     clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
-    bars: '<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>'
+    bars: '<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>',
+    tag: '<path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/>'
   };
   const panelTitle = (title: string, icon: string) =>
     `<h2 class="panel-title"><svg class="panel-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${icon}</svg>${title}</h2>`;
@@ -536,7 +533,7 @@ export function generateHtmlReport(summary: ReportSummary): string {
                 .slice(0, GROUP_TESTS_SHOWN)
                 .map(
                   failure =>
-                    `<button type="button" class="test-jump" onclick="openTest('${testDomId(summary, failure)}')"><span class="test-jump-spec">${escapeHtml(failure.spec.specName)}</span> › ${escapeHtml(failure.test.fullTitle)}${failure.spec.owner ? `<span class="test-jump-owner"> · ${escapeHtml(failure.spec.owner)}</span>` : ''}</button>`
+                    `<button type="button" class="test-jump" onclick="openTest('${testDomId(summary, failure)}')"><span class="test-jump-spec">${escapeHtml(failure.spec.specName)}${runLabel(failure.spec) ? ` (${escapeHtml(runLabel(failure.spec))})` : ''}</span> › ${escapeHtml(failure.test.fullTitle)}${failure.spec.owner ? `<span class="test-jump-owner"> · ${escapeHtml(failure.spec.owner)}</span>` : ''}</button>`
                 )
                 .join('')}${
                 group.tests.length > GROUP_TESTS_SHOWN
@@ -617,6 +614,31 @@ export function generateHtmlReport(summary: ReportSummary): string {
         ),
     ' panel-owners'
   );
+
+  const tagCounts = new Map<string, { passed: number; failed: number; flaky: number }>();
+  for (const test of summary.specs.flatMap(spec => spec.tests)) {
+    for (const tag of test.tags ?? []) {
+      const counts = tagCounts.get(tag) ?? { passed: 0, failed: 0, flaky: 0 };
+      if (test.state === 'passed' || test.state === 'failed' || test.state === 'flaky') counts[test.state]++;
+      tagCounts.set(tag, counts);
+    }
+  }
+  const tagsPanelHtml = tagCounts.size
+    ? panel(
+        'Tags',
+        panelIcons.tag,
+        'brand',
+        'passed · failed · flaky',
+        `<div class="panel-list">${[...tagCounts]
+          .sort((a, b) => b[1].failed - a[1].failed || b[1].flaky - a[1].flaky || a[0].localeCompare(b[0]))
+          .map(
+            ([tag, counts]) =>
+              `<button type="button" class="panel-row" data-tag="${escapeHtml(tag.toLowerCase())}" onclick="searchAll('tag:' + this.dataset.tag)"><span class="panel-row-name">${escapeHtml(tag)}</span><span class="panel-row-value">${counts.passed} · <span class="count-failed">${counts.failed}</span> · <span class="count-flaky">${counts.flaky}</span></span></button>`
+          )
+          .join('')}</div>`,
+        ' panel-wide'
+      )
+    : '';
 
   const aiPanel = (kind: PromptKind, prompt: string, count: number) =>
     panel(
@@ -757,7 +779,7 @@ export function generateHtmlReport(summary: ReportSummary): string {
       spec.tests.reduce(
         (testCount, t) =>
           testCount +
-          (hasFailureEvidence(t) ? (t.screenshots?.length ?? 0) + (t.video?.base64 || (!t.video && spec.video?.base64) ? 1 : 0) : 0),
+          (hasFailureEvidence(t) ? (t.screenshots?.length ?? 0) + (isPlayable(t.video) || (!t.video && isPlayable(spec.video)) ? 1 : 0) : 0),
         0
       ),
     0
@@ -896,6 +918,7 @@ ${REPORT_CSS}
           ${slowestTestsPanelHtml}
           ${slowerTestsPanelHtml}
           ${slowestSpecsPanelHtml}
+          ${tagsPanelHtml}
           ${durationsPanelHtml}
         </div>
       </section>
@@ -911,7 +934,7 @@ ${REPORT_CSS}
             </button>
           </div>
         </div>
-        <div class="search-hint">Search filters: <code>status:failed</code> <code>spec:checkout</code> <code>error:timed out</code> <code>owner:name</code> <code>group:2</code> <code>history:new</code> · quote values with spaces, e.g. <code>error:"never found"</code></div>
+        <div class="search-hint">Search filters: <code>status:failed</code> <code>spec:checkout</code> <code>error:timed out</code> <code>owner:name</code> <code>group:2</code> <code>history:new</code> <code>tag:smoke</code> · quote values with spaces, e.g. <code>error:"never found"</code></div>
         <section class="specs-list" id="specsList">
           ${specCardsHtml}
         </section>
@@ -1031,7 +1054,7 @@ ${REPORT_CSS}
       window.scrollTo({ top: Math.max(top, 0), behavior: 'smooth' });
     }
 
-    const SEARCH_TOKEN_PATTERN = /(status|spec|error|owner|group|history):("[^"]*"|\\S*)|"([^"]*)"|(\\S+)/g;
+    const SEARCH_TOKEN_PATTERN = /(status|spec|error|owner|group|history|tag):("[^"]*"|\\S*)|"([^"]*)"|(\\S+)/g;
 
     function parseSearch(query) {
       const tokens = {};
@@ -1054,7 +1077,9 @@ ${REPORT_CSS}
             ? fields.status === value || (value === 'skipped' && fields.status === 'pending')
             : key === 'group' || key === 'history'
               ? fields[key] === value
-              : fields[key].includes(value)
+              : key === 'tag'
+                ? fields.tag.split(' ').includes('@' + value.replace(/^@/, ''))
+                : fields[key].includes(value)
         )
       );
     }
@@ -1076,10 +1101,11 @@ ${REPORT_CSS}
           const error = row.getAttribute('data-error') || '';
           const group = row.getAttribute('data-group') || '';
           const history = row.getAttribute('data-history') || '';
+          const tag = row.getAttribute('data-tags') || '';
 
           const matchesFilter = (currentFilter === 'all') || (state === currentFilter) || (currentFilter === 'pending' && state === 'skipped');
           const matchesSearch =
-            matchesTokens(search.tokens, { status: state, spec: specName, error, owner, group, history }) &&
+            matchesTokens(search.tokens, { status: state, spec: specName, error, owner, group, history, tag }) &&
             (!search.text || title.includes(search.text) || specName.includes(search.text));
 
           if (matchesFilter && matchesSearch) {
@@ -1524,7 +1550,7 @@ ${REPORT_CSS}
     }
 
     function mountVideo(player) {
-      const src = videoUrl(player.getAttribute('data-video-id'));
+      const src = player.getAttribute('data-video-src') || videoUrl(player.getAttribute('data-video-id'));
       if (!src) return false;
       const video = document.createElement('video');
       video.src = src;

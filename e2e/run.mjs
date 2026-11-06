@@ -26,9 +26,11 @@ execFileSync(bin('cypress'), ['install'], { cwd: fixtureDir, stdio: 'inherit' })
 const run = spawnSync(bin('cypress'), ['run'], { cwd: fixtureDir, stdio: 'inherit' });
 assert.equal(run.status, 1, 'cypress run should end with exactly one failed test');
 
-for (const file of ['e2e.html', 'e2e.json', 'e2e.junit.xml', 'e2e.summary.md']) {
+for (const file of ['e2e.html', 'e2e.junit.xml', 'e2e.summary.md']) {
   assert.ok(existsSync(join(reportsDir, file)), `${file} was not written`);
 }
+const jsonFile = readdirSync(reportsDir).find(name => /^e2e\.[0-9a-f]{8}\.json$/.test(name));
+assert.ok(jsonFile, 'e2e.<id>.json was not written');
 
 const html = readFileSync(join(reportsDir, 'e2e.html'), 'utf-8');
 assert.match(html, /data-video-id="test-video-/, 'the HTML report embeds no test clip');
@@ -39,7 +41,7 @@ assert.match(junit, /<testsuites [^>]*\bfailures="1"/);
 assert.equal(junit.match(/<testcase /g)?.length, 3);
 assert.equal(junit.match(/<failure /g)?.length, 1);
 
-const tests = JSON.parse(readFileSync(join(reportsDir, 'e2e.json'), 'utf-8')).specs.flatMap(spec => spec.tests);
+const tests = JSON.parse(readFileSync(join(reportsDir, jsonFile), 'utf-8')).specs.flatMap(spec => spec.tests);
 assert.deepEqual(tests.map(test => test.state).sort(), ['failed', 'flaky', 'passed']);
 assert.ok(tests.every(test => test.steps.length > 0), 'cy.step was not recorded');
 

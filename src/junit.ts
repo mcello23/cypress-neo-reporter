@@ -20,6 +20,9 @@ export function generateJUnitXml(summary: ReportSummary): string {
     for (const test of spec.tests) {
       const testDurationSec = (test.duration / 1000).toFixed(3);
       xml += `    <testcase name="${escapeXml(test.fullTitle)}" classname="${escapeXml(spec.specName)}" time="${testDurationSec}">\n`;
+      if (test.tags?.length) {
+        xml += `      <properties>${test.tags.map(tag => `<property name="tag" value="${escapeXml(tag)}"/>`).join('')}</properties>\n`;
+      }
 
       if (test.state === 'failed') {
         const msg = firstLine(test.displayError) || 'Test failed';

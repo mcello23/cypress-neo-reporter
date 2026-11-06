@@ -107,8 +107,9 @@ test('generateReports writes the four outputs named after the report', async () 
     history: false
   });
   const base = join(projectRoot, 'cypress/reports/E2E-regression');
+  assert.match(files.json ?? '', /E2E-regression\.[0-9a-f]{8}\.json$/);
   assert.deepEqual(files, {
-    json: `${base}.json`,
+    json: files.json ?? '',
     junit: `${base}.junit.xml`,
     html: `${base}.html`,
     markdown: `${base}.summary.md`

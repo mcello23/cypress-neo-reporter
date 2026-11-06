@@ -1,18 +1,10 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join, relative, isAbsolute, basename } from 'node:path';
 import { readCiInfo, readSpecOwners, readSpecOwnersFile } from './ci';
-import {
-  computePassRate,
-  deriveSuiteLabel,
-  machineTimeZone,
-  stripAnsi,
-  toEmbeddedFile,
-  toScreenshotSafeName,
-  toSourceSpecPath
-} from './format';
+import { computePassRate, deriveSuiteLabel, machineTimeZone, stripAnsi, toScreenshotSafeName, toSourceSpecPath } from './format';
 import { packageVersion } from './html/assets';
 import { SCHEMA_VERSION, type EmbeddedFile, type RecordedTestsMap, type ReporterOptions, type ReportSummary, type SpecData, type TestData } from './types';
-import { MAX_EMBEDDED_VIDEO_CHARS, recordedSpecVideos, testVideoPath } from './video';
+import { recordedSpecVideos, testVideoPath } from './video';
 
 function toTestState(test: CypressCommandLine.TestResult): TestData['state'] {
   const state = (test.state as TestData['state']) || 'passed';
@@ -27,23 +19,27 @@ export function stripEmbed(file: EmbeddedFile): EmbeddedFile {
   return { name: file.name, path: file.path };
 }
 
-export function capEmbeddedVideos(specs: SpecData[]): SpecData[] {
-  let embeddedChars = 0;
-  const keep = (file?: EmbeddedFile): EmbeddedFile | undefined => {
-    const size = file?.base64?.length ?? 0;
-    if (!file || !size) return file;
-    if (embeddedChars + size <= MAX_EMBEDDED_VIDEO_CHARS) {
-      embeddedChars += size;
-      return file;
-    }
-    return stripEmbed(file);
-  };
-  return specs.map(spec => ({
-    ...spec,
-    tests: spec.tests.map(t => (t.video ? { ...t, video: keep(t.video) } : t)),
-    video: keep(spec.video)
-  }));
+export interface EvidenceFile {
+  file: EmbeddedFile;
+  mimeType: string;
+  rank: number;
 }
+
+export function evidenceFiles(specs: SpecData[]): EvidenceFile[] {
+  return specs.flatMap(spec => [
+    ...spec.tests.filter(hasFailureEvidence).flatMap(test => [
+      ...(test.screenshots ?? []).map(file => ({ file, mimeType: 'image/png', rank: test.state === 'failed' ? 0 : 2 })),
+      ...(test.video ? [{ file: test.video, mimeType: 'video/mp4', rank: test.state === 'failed' ? 1 : 3 }] : [])
+    ]),
+    ...(spec.video ? [{ file: spec.video, mimeType: 'video/mp4', rank: spec.failures > 0 ? 1 : 3 }] : [])
+  ]);
+}
+
+function mediaFile(filePath: string): EmbeddedFile {
+  return { name: basename(filePath), path: filePath };
+}
+
+const TITLE_TAG = /(?<!\S)@[\w-]+/g;
 
 function toProjectPath(filePath: string, projectDir: string): string {
   return isAbsolute(filePath) ? filePath : join(projectDir, filePath);
@@ -80,6 +76,8 @@ export function buildReportSummary(
   options: ReporterOptions = {}
 ): ReportSummary {
   const specs: SpecData[] = [];
+  const browser = `${runResults.browserName ?? 'Chrome'} ${runResults.browserVersion ?? ''}`.trim();
+  const testingType = (runResults.config as { testingType?: string } | undefined)?.testingType;
 
   for (const run of runResults.runs) {
     const relPath = toSourceSpecPath(relative(projectDir, run.spec.absolute));
@@ -94,7 +92,7 @@ export function buildReportSummary(
       const testScreenshots = (run.screenshots ?? [])
         .map(shot => toProjectPath(shot.path, projectDir))
         .filter(shotPath => isTestScreenshot(shotPath, t.title))
-        .map(shotPath => toEmbeddedFile(shotPath, 'image/png'));
+        .map(mediaFile);
       const state = toTestState(t);
       const clipPath =
         specVideoPath && (state === 'failed' || state === 'flaky')
@@ -113,9 +111,10 @@ export function buildReportSummary(
         businessGoal: recorded?.businessGoal ?? null,
         steps: (recorded?.steps ?? []).map(step => ({ ...step, message: stripAnsi(step.message) })),
         code: recorded?.code,
-        video: clipPath && existsSync(clipPath) ? toEmbeddedFile(clipPath, 'video/mp4') : undefined,
+        video: clipPath && existsSync(clipPath) ? mediaFile(clipPath) : undefined,
         network: recorded?.network,
-        consoleErrors: recorded?.consoleErrors?.map(stripAnsi)
+        consoleErrors: recorded?.consoleErrors?.map(stripAnsi),
+        tags: [...new Set(t.title.join(' ').match(TITLE_TAG))]
       };
     });
 
@@ -139,9 +138,11 @@ export function buildReportSummary(
       pending: stats.pending || 0,
       skipped: stats.skipped || 0,
       total: run.stats.tests || 0,
+      browser,
+      testingType,
       video:
         specVideoPath && existsSync(toProjectPath(specVideoPath, projectDir)) && tests.some(t => hasFailureEvidence(t) && !t.video)
-          ? toEmbeddedFile(toProjectPath(specVideoPath, projectDir), 'video/mp4')
+          ? mediaFile(toProjectPath(specVideoPath, projectDir))
           : undefined
     });
   }
@@ -162,7 +163,7 @@ export function buildReportSummary(
     reporterVersion: packageVersion(),
     projectName: options.projectName ?? readProjectName(projectDir) ?? 'Cypress',
     timestamp: new Date().toISOString(),
-    browser: `${runResults.browserName ?? 'Chrome'} ${runResults.browserVersion ?? ''}`.trim(),
+    browser,
     environment: runConfig?.baseUrl ?? process.env.CYPRESS_BASE_URL ?? '',
     resolution: runConfig ? `${runConfig.viewportWidth} × ${runConfig.viewportHeight}` : '1920 × 1080',
     totalDurationMs: runResults.totalDuration || 0,
@@ -173,7 +174,7 @@ export function buildReportSummary(
     totalPending: runResults.totalPending || 0,
     totalSkipped: runResults.totalSkipped || 0,
     passRate,
-    specs: capEmbeddedVideos(specs),
+    specs,
     suiteLabel: deriveSuiteLabel(options.reportName),
     ci: readCiInfo(projectDir),
     teamName: options.showTeamName === false ? undefined : options.teamName?.trim() || undefined,

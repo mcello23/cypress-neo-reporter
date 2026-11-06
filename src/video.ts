@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import { toScreenshotSafeName } from './format';
 import type { RecordedTestPayload } from './types';
 
-export const MAX_EMBEDDED_VIDEO_CHARS = 150 * 1024 * 1024;
 const FAILED_VIDEO_CRF = 30;
 const CLIP_LEAD_MS = 0;
 const CLIP_TAIL_MS = 1000;

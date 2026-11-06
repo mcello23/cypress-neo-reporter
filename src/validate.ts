@@ -14,6 +14,8 @@ export const KNOWN_OPTION_KEYS: string[] = [
   'reportUrl',
   'redact',
   'includeTestCode',
+  'maxEmbedMb',
+  'assets',
   'keepVideos',
   'reportRoot',
   'summaryFiles',
@@ -23,6 +25,8 @@ export const KNOWN_OPTION_KEYS: string[] = [
 const HISTORY_PROVIDERS = ['azure-devops', 'file'];
 
 const THEMES: readonly ReportTheme[] = ['auto', 'light', 'dark'];
+
+const ASSET_MODES = ['inline', 'folder'];
 
 function assertPositiveInteger(name: string, value: unknown): void {
   if (value === undefined || (Number.isInteger(value) && (value as number) > 0)) return;
@@ -34,7 +38,7 @@ export function validateOptions(options: MergeOptions): void {
   if (unknown.length) {
     console.warn(`[neo-reporter] Ignoring unknown option ${unknown.map(key => `"${key}"`).join(', ')}. Known options: ${KNOWN_OPTION_KEYS.join(', ')}.`);
   }
-  const { outputs, theme, history } = options;
+  const { outputs, theme, history, assets, maxEmbedMb } = options;
   if (outputs !== undefined) {
     if (!Array.isArray(outputs)) {
       throw new Error(`[neo-reporter] outputs must be an array such as ['html', 'junit'], got ${JSON.stringify(outputs)}.`);
@@ -46,6 +50,12 @@ export function validateOptions(options: MergeOptions): void {
   }
   if (theme !== undefined && !THEMES.includes(theme)) {
     throw new Error(`[neo-reporter] Unknown theme ${JSON.stringify(theme)}. Use ${THEMES.join(', ')}.`);
+  }
+  if (assets !== undefined && !ASSET_MODES.includes(assets)) {
+    throw new Error(`[neo-reporter] Unknown assets ${JSON.stringify(assets)}. Use ${ASSET_MODES.join(' or ')}.`);
+  }
+  if (maxEmbedMb !== undefined && !(typeof maxEmbedMb === 'number' && maxEmbedMb >= 0)) {
+    throw new Error(`[neo-reporter] maxEmbedMb must be a number of 0 or more, got ${JSON.stringify(maxEmbedMb)}.`);
   }
   if (history) {
     if (history.provider !== undefined && !HISTORY_PROVIDERS.includes(history.provider)) {

@@ -1,11 +1,11 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { basename, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { computePassRate } from './format';
 import { attachRunHistory, createBaselineHistoryLoader, createHistoryLoader } from './history';
 import { packageVersion } from './html/assets';
 import { needsHistory, writeReportOutputs, type ReportFiles } from './output';
 import { applyRedaction } from './redact';
-import { capEmbeddedVideos } from './summary';
+import { evidenceFiles } from './summary';
 import { DEFAULT_REPORTS_DIR, MERGE_OUTPUTS, SCHEMA_VERSION, STEPS_FILE_NAME, type MergeOptions, type ReportSummary } from './types';
 import { validateOptions } from './validate';
 
@@ -53,6 +53,9 @@ function readReportJson(filePath: string): ReportSummary | null {
     if (!data.mergedFrom && data.schemaVersion !== SCHEMA_VERSION) {
       console.warn(`[neo-reporter] ${filePath} uses report schema ${data.schemaVersion ?? 'none'} (reporter ${data.reporterVersion ?? 'unknown'}), expected ${SCHEMA_VERSION}. The merged report may be incomplete.`);
     }
+    evidenceFiles(data.specs).forEach(({ file }) => {
+      if (!isAbsolute(file.path)) file.path = join(dirname(filePath), file.path);
+    });
     return data;
   } catch (error) {
     console.warn(`[neo-reporter] Skipping unreadable report file ${filePath}: ${error}`);
@@ -66,7 +69,7 @@ export async function mergeReports(options: MergeOptions = {}): Promise<MergeRes
   const baselinePath = options.baseline && resolve(options.baseline);
   const baseline = baselinePath ? readReportJson(baselinePath) : null;
   if (baselinePath && !baseline) throw new Error(`Cannot read the baseline report ${baselinePath}`);
-  const summaries = (options.summaryFiles ?? findReportJsonFiles(reportRoot))
+  const summaries = (options.summaryFiles ?? findReportJsonFiles(reportRoot).sort())
     .filter(file => resolve(file) !== baselinePath)
     .map(readReportJson)
     .filter((summary): summary is ReportSummary => summary !== null && !summary.mergedFrom)
@@ -77,7 +80,20 @@ export async function mergeReports(options: MergeOptions = {}): Promise<MergeRes
   }
 
   const [first] = summaries;
-  const specs = summaries.flatMap(summary => summary.specs);
+  const specs = summaries
+    .flatMap(summary => summary.specs)
+    .sort((a, b) => a.specFile.localeCompare(b.specFile) || (a.browser ?? '').localeCompare(b.browser ?? ''));
+  const runsPerSpec = new Map<string, number>();
+  specs.forEach(spec => {
+    const key = [spec.specFile, spec.browser, spec.testingType].filter(Boolean).join(' · ');
+    runsPerSpec.set(key, (runsPerSpec.get(key) ?? 0) + 1);
+  });
+  const repeated = [...runsPerSpec].filter(([, count]) => count > 1);
+  if (repeated.length) {
+    console.warn(
+      `[neo-reporter] ${repeated.map(([key, count]) => `${key} (${count}×)`).join(', ')} ran in more than one merged report, and every run is counted. Remove the extra JSON files if they are copies of one run.`
+    );
+  }
   const total = (pick: (summary: ReportSummary) => number) => summaries.reduce((sum, summary) => sum + (pick(summary) || 0), 0);
   const latest = (pick: (summary: ReportSummary) => string) => summaries.map(pick).filter(Boolean).pop() ?? '';
   const totalTests = total(summary => summary.totalTests);
@@ -88,7 +104,7 @@ export async function mergeReports(options: MergeOptions = {}): Promise<MergeRes
     reporterVersion: packageVersion(),
     projectName: options.projectName ?? first.projectName,
     timestamp: new Date().toISOString(),
-    browser: latest(summary => summary.browser),
+    browser: [...new Set(summaries.map(summary => summary.browser).filter(Boolean))].join(', '),
     environment: latest(summary => summary.environment),
     resolution: latest(summary => summary.resolution),
     totalDurationMs: total(summary => summary.totalDurationMs),
@@ -99,7 +115,7 @@ export async function mergeReports(options: MergeOptions = {}): Promise<MergeRes
     totalPending: total(summary => summary.totalPending),
     totalSkipped: total(summary => summary.totalSkipped),
     passRate: computePassRate(totalPassed, totalTests),
-    specs: capEmbeddedVideos(specs),
+    specs,
     suiteLabel: options.reportName ?? first.suiteLabel,
     ci: summaries.find(summary => summary.ci)?.ci,
     teamName: options.showTeamName === false ? undefined : options.teamName?.trim() || first.teamName,
@@ -117,7 +133,7 @@ export async function mergeReports(options: MergeOptions = {}): Promise<MergeRes
     await attachRunHistory(merged, loader);
   }
   const outputDir = options.outputDir ? resolve(options.outputDir) : reportRoot;
-  const files = writeReportOutputs(merged, outputDir, merged.suiteLabel || merged.projectName, outputs, options.reportUrl);
+  const files = writeReportOutputs(merged, outputDir, merged.suiteLabel || merged.projectName, outputs, options);
   console.log(`[neo-reporter] Merged ${summaries.length} reports`);
   return { summary: merged, files };
 }

@@ -4,6 +4,7 @@ export const DEFAULT_REPORTS_DIR = 'cypress/reports';
 export const REPORT_OUTPUTS = ['html', 'json', 'junit', 'markdown'] as const;
 export const MERGE_OUTPUTS = ['html', 'markdown'] as const;
 export const SCHEMA_VERSION = 1;
+export const DEFAULT_MAX_EMBED_MB = 150;
 
 export type ReportOutput = (typeof REPORT_OUTPUTS)[number];
 export type ReportTheme = 'auto' | 'light' | 'dark';
@@ -21,6 +22,8 @@ export interface ReporterOptions {
   reportUrl?: string;
   redact?: false | { patterns?: RegExp[]; replace?: (text: string) => string };
   includeTestCode?: boolean;
+  maxEmbedMb?: number;
+  assets?: 'inline' | 'folder';
   historyLoader?: HistoryLoader | null;
 }
 
@@ -94,6 +97,7 @@ export interface TestData {
   video?: EmbeddedFile;
   network?: NetworkFailure[];
   consoleErrors?: string[];
+  tags?: string[];
 }
 
 export interface EmbeddedFile {
@@ -108,6 +112,8 @@ export interface SpecData {
   tests: TestData[];
   video?: EmbeddedFile;
   owner?: string;
+  browser?: string;
+  testingType?: string;
   duration: number;
   passes: number;
   failures: number;

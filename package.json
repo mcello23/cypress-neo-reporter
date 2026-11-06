@@ -1,0 +1,83 @@
+{
+  "name": "cypress-neo-reporter",
+  "version": "1.0.0",
+  "description": "One HTML report for Cypress runs: failures grouped by cause, history from your CI and the evidence behind every failed test.",
+  "keywords": [
+    "cypress",
+    "cypress-plugin",
+    "reporter",
+    "html-report",
+    "test-report",
+    "azure-devops",
+    "junit",
+    "e2e"
+  ],
+  "homepage": "https://github.com/mcello23/cypress-neo-reporter#readme",
+  "bugs": {
+    "url": "https://github.com/mcello23/cypress-neo-reporter/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mcello23/cypress-neo-reporter.git"
+  },
+  "license": "MIT",
+  "author": "Marcelo Costa",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./plugin": {
+      "types": "./dist/plugin.d.ts",
+      "default": "./dist/plugin.js"
+    },
+    "./support": {
+      "types": "./dist/support.d.ts",
+      "default": "./dist/support.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "typesVersions": {
+    "*": {
+      "plugin": [
+        "dist/plugin.d.ts"
+      ],
+      "support": [
+        "dist/support.d.ts"
+      ]
+    }
+  },
+  "bin": {
+    "neo-reporter": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
+    "demo": "tsx scripts/demo.ts",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+  },
+  "dependencies": {
+    "plyr": "^3.8.4"
+  },
+  "peerDependencies": {
+    "cypress": ">=15"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "cypress": "^16.2.1",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3"
+  }
+}

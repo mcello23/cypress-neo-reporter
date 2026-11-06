@@ -22,7 +22,7 @@ Pass these as the third argument of `neoReporter(on, config, options)`, or the s
 | `assets` | `'inline' \| 'folder'` | `'inline'` | `'folder'` copies screenshots and clips next to the report instead of embedding them. |
 | `keepVideos` | `boolean` | `false` | `true` leaves Cypress's videos untouched. Clips of failed and flaky tests are still cut next to them. |
 
-The plugin checks the options when Cypress starts. These stop the run with an error: `outputs` that is not an array of the four names, an unknown `theme`, `assets` or `history.provider`, a `maxEmbedMb` below 0, a `history.runs` or `history.maxWeeks` that is not a whole number above 0, and an unknown `timeZone`. An unknown option name prints a warning with the names it knows. `mergeReports` and `neo-reporter merge` check the same way.
+The plugin checks the options when Cypress starts. These stop the run with an error: `outputs` that is not an array of the four names, an unknown `theme`, `assets` or `history.provider`, a `maxEmbedMb` below 0, a `history.runs` or `history.maxWeeks` that is not a whole number above 0, an unknown `timeZone`, and a `redact` other than `false` or an object with optional `patterns` (an array of RegExp) and `replace` (a function). An unknown option name prints a warning with the names it knows. `generateReports`, `mergeReports` and `neo-reporter merge` check the same way. `reportRoot`, `summaryFiles` and `baseline` are only known to `mergeReports`, so the plugin and `generateReports` warn about them as unknown.
 
 By default, videos of passing specs are deleted and a failing spec's full video is replaced by per-test clips under `cypress/videos/<spec>/`, so Cypress Cloud uploads and CI artifact steps do not see the removed files. `keepVideos: true` turns that off.
 
@@ -55,13 +55,17 @@ With `history: { provider: 'file' }`, every run with the `html` or `markdown` ou
 
 The file keeps the last `5 × history.runs` lines (50 by default). It only helps on CI when you keep it between runs, with a cache or the previous run's artifact. For parallel runs, pass `--history-file` to `neo-reporter merge` and leave the file provider off on the machines. Merge adds one line for the merged run and drops lines the machines wrote for the runs it merged.
 
+Lines that are not history lines, such as broken JSON or a line without `tests`, are skipped and dropped the next time the file is written.
+
 ## Redaction
 
 Redaction is on by default. It replaces these with `[redacted]`:
 
-- `Authorization`, `Cookie` and `Set-Cookie` header values, in raw and JSON form.
+- `Authorization`, `Cookie` and `Set-Cookie` header values (every value of a Set-Cookie array), in raw and JSON form.
 - Bearer tokens and JWT-shaped strings.
 - The `user:password@` part of URLs.
+- Values of JSON keys whose name contains `pass`, `secret`, `token`, `api-key`, `api_key` or `apikey`, in any case, such as `"password": "[redacted]"`. Only double-quoted string values are masked.
+- The values of the URL parameters `token`, `access_token`, `sig`, `code`, `key` and `password` after `?`, `&` or `#`, wherever they appear, including steps, console errors and test code.
 
 It also drops the query string and fragment from recorded failed-request URLs and from the target URL. It covers error messages and stacks of every attempt, steps, business goals, console errors, request URLs, test code and the target URL, in every output: HTML, JSON, JUnit, Markdown, AI prompts and chat messages. Test titles, spec names, screenshots and videos are not changed.
 
@@ -85,7 +89,7 @@ neoReporter(on, config, {
 
 Only failed and flaky tests' screenshots and clips are embedded, in this order: screenshots of failed tests, clips of failed tests, then the same for flaky tests. A file that no longer fits in `maxEmbedMb` is left out, measured as embedded base64, which is about 4/3 of the size on disk. The run log says how many files were left out. In the report, a clip that was left out says so, and a screenshot that was left out points to its file on disk. Screenshots of passing tests stay in the JSON as paths only.
 
-`assets: 'folder'` copies every screenshot and clip of failed and flaky tests to `<name>.<id>-assets/` next to the report (`<name>-assets/` for a merged report), links them by relative path and keeps base64 out of the JSON. `maxEmbedMb` does not apply. Publish the folder with the report. `neo-reporter merge` finds a folder-mode run's files next to its JSON and embeds them, unless the merge uses `assets: 'folder'` too.
+`assets: 'folder'` copies every screenshot and clip of failed and flaky tests to `<name>.<id>-assets/` next to the report (`<name>-assets/` for a merged report), links them by relative path and keeps base64 out of the JSON. `maxEmbedMb` does not apply. Publish the folder with the report. `neo-reporter merge` finds a folder-mode run's files next to its JSON and embeds them, unless the merge uses `assets: 'folder'` too. Merge only embeds or copies evidence that a run already embedded or that sits inside its JSON's folder, such as `<name>.<id>-assets/`. Paths that point outside that folder, with `../` or an absolute path elsewhere, are dropped.
 
 Neither option has a CLI flag. `mergeReports()` accepts both.
 
@@ -98,6 +102,7 @@ Neither option has a CLI flag. `mergeReports()` accepts both.
 | `SYSTEM_TEAMFOUNDATIONCOLLECTIONURI`, `SYSTEM_COLLECTIONURI` | Organization for history and the build link. The first one wins when both are set. |
 | `SYSTEM_TEAMPROJECT` | Project for history and the build link. |
 | `BUILD_BUILDNUMBER`, `BUILD_BUILDID` | Build label and link in the header. The current build is left out of history. |
+| `SYSTEM_JOBPOSITIONINPHASE`, `SYSTEM_TOTALJOBSINPHASE` | The job slot in the run JSON's `<id>` when the job runs in parallel. |
 | `BUILD_SOURCEBRANCH`, `BUILD_SOURCEVERSION` | Branch and commit. History prefers runs of the same branch. |
 | `BUILD_REPOSITORY_URI` | Commit link. |
 | `BUILD_DEFINITIONID`, `RELEASE_DEFINITIONID` | Limits history to runs of the same pipeline. |
@@ -114,6 +119,7 @@ Neither option has a CLI flag. `mergeReports()` accepts both.
 | `CI_MERGE_REQUEST_SOURCE_BRANCH_NAME`, `CI_COMMIT_REF_NAME` | Branch. The merge request's source branch comes first. |
 | `CI_COMMIT_SHA`, `CI_PROJECT_URL` | Commit and commit link. |
 | `CI_PIPELINE_ID`, `CI_PIPELINE_URL` | Pipeline label and link. |
+| `CI_NODE_INDEX` | The job slot in the run JSON's `<id>` for `parallel:` jobs. |
 | `NEO_SLACK_WEBHOOK`, `NEO_TEAMS_WEBHOOK` | Webhooks for `notify` and `merge` when `--slack` or `--teams` is not given. |
 | `CYPRESS_BASE_URL` | The target URL in the header when the run config has no `baseUrl`. |
 
@@ -162,7 +168,7 @@ Merges the JSON reports found under `dir` (default `cypress/reports`, searched r
 | `--time-zone <zone>` | IANA time zone for every time in the report. |
 | `--theme <theme>` | `auto`, `light` or `dark`. |
 | `--outputs <list>` | Comma-separated: `html,markdown,junit,json`. Default: `html,markdown`. |
-| `--report-url <url>` | Link the Markdown summary and the chat message point to. |
+| `--report-url <url>` | Link the Markdown summary and the chat message point to. Default on GitHub Actions: the run page. |
 | `--history-file <path>` | Read run history from this JSONL file and add the merged run to it. |
 | `--baseline <file>` | Compare with one earlier report JSON instead of run history. It never writes the history file, and a baseline inside `dir` is not merged. |
 | `--no-history` | Skip run history. |
@@ -170,6 +176,8 @@ Merges the JSON reports found under `dir` (default `cypress/reports`, searched r
 | `--slack`, `--teams` | Post the merged run, as [notify](#notify) does. A failed post only warns. |
 
 The merged report does not write JUnit by default, so a CI test tab that already reads each machine's JUnit file does not count every test twice. Merge counts every run it finds. It warns when the same spec, browser and testing type appear in more than one file, and for each file whose `schemaVersion` is missing or different, such as JSON written by 1.x. It skips, with a warning, files with unexpected field values.
+
+A merged report's `timestamp` is the newest merged run's, not the time of the merge. Merging the same runs again with `--history-file` replaces their history line instead of adding a second one.
 
 `--baseline` takes a run's `<name>.<id>.json` or a merged `<name>.json`.
 
@@ -222,7 +230,7 @@ neo-reporter notify <report.json> [options]
 | --- | --- |
 | `--slack <url>` | Slack incoming webhook. Default: `NEO_SLACK_WEBHOOK`. |
 | `--teams <url>` | Microsoft Teams Workflows webhook, from the "Post to a channel when a webhook request is received" template. It gets an Adaptive Card. Default: `NEO_TEAMS_WEBHOOK`. |
-| `--report-url <url>` | Link the message points to. |
+| `--report-url <url>` | Link the message points to. Default on GitHub Actions: the run page. |
 
 The message has the status and title, the failed, flaky and passed counts with pass rate and duration, new, known and fixed failures when the report has history, branch, commit and build, and the top 5 failure groups. It is built from the report data, which is already redacted. Keep webhooks in secrets, never in config. The URL is never printed. A post times out after 15 seconds.
 
@@ -236,7 +244,7 @@ The message has the status and title, the failed, flaky and passed counts with p
 | `1` | Nothing to merge, the gate failed, or an error | The gate failed, or the report cannot be checked | A post failed, or the report cannot be read |
 | `2` | Usage error | Usage error | Usage error |
 
-A usage error is a missing or unknown command, an unknown flag, a missing value, an extra argument, a bad `--theme`, `--outputs`, `--fail-on` or `--min-pass-rate` value, `gate` without `--fail-on` or `--min-pass-rate`, `--quarantine` alone, or `notify` without a webhook. The message and the usage go to stderr. An unknown `--time-zone` is a runtime error and exits 1. `--help` and `--version` exit 0.
+A usage error is a missing or unknown command, an unknown flag, a missing value, an extra argument, a bad `--theme`, `--outputs`, `--fail-on` or `--min-pass-rate` value (an empty or blank `--min-pass-rate` included), an unknown `--time-zone`, `gate` without `--fail-on` or `--min-pass-rate`, `--quarantine` alone, or `notify` without a webhook. The message and the usage go to stderr. `--help` and `--version` exit 0.
 
 ## Programmatic API
 
@@ -255,14 +263,14 @@ import {
 | Export | Signature | What it does |
 | --- | --- | --- |
 | `neoReporter` | `(on, config, options?: NeoReporterOptions) => config` | Registers the plugin's events and returns the config. |
-| `createNeoReporter` | `(config, options?: NeoReporterOptions) => { beforeRun, tasks, afterSpec, afterRun }` | The same handlers, to call from your own events. See [Known limitations](../README.md#known-limitations). |
+| `createNeoReporter` | `(config, options?: NeoReporterOptions) => { beforeRun, tasks, afterSpec, afterRun }` | The same handlers, to call from your own events. Pass the `before:run` details to `beforeRun(details)` so it can warn when the config is not returned. See [Known limitations](../README.md#known-limitations). |
 | `generateReports` | `(runResults, options?: NeoReporterOptions) => Promise<ReportFiles>` | Writes the outputs for a `cypress run` result. |
 | `mergeReports` | `(options?: MergeOptions) => Promise<MergeResult \| null>` | Merges JSON reports. Returns `{ summary, files }`, or `null` when there was nothing to merge. |
 | `generateHtmlReport` | `(summary: ReportSummary) => string` | Renders the HTML report from the report JSON. |
 | `generateMarkdownSummary` | `(summary: ReportSummary, reportUrl?: string) => string` | Renders the Markdown summary. |
 | `generateJUnitXml` | `(summary: ReportSummary) => string` | Renders the JUnit XML. |
 
-Types: `ReportSummary`, `SpecData`, `TestData`, `NeoReporterOptions`, `MergeOptions`, `HistoryOptions`, `ReportOutput`, `ReportTheme`, `ReportFiles` and `MergeResult`. They reference Cypress's global types, so they need `cypress` installed (it is a peer dependency), but no `types` entry in `tsconfig.json`.
+Types: `ReportSummary`, `SpecData`, `TestData`, `NeoReporterOptions`, `MergeOptions`, `HistoryOptions`, `ReportOutput`, `ReportTheme`, `ReportFiles` and `MergeResult`. The nested report types `RunHistory`, `HistoryRun`, `CiInfo`, `TestStep`, `TestAttempt`, `EmbeddedFile` and `NetworkFailure`, and `RecordedTestPayload` (the record task's argument), are exported too, so declarations that infer them compile. They reference Cypress's global types, so they need `cypress` installed (it is a peer dependency), but no `types` entry in `tsconfig.json`.
 
 `cypress-neo-reporter/plugin` exports `neoReporter`, `createNeoReporter`, `generateReports`, `mergeReports` and the types `NeoReporterOptions`, `MergeOptions`, `HistoryOptions`, `ReportOutput`, `ReportTheme` and `ReportFiles`. `cypress-neo-reporter/support` is imported for its side effects and exports the `StepPhase` type.
 
@@ -282,20 +290,20 @@ Types: `ReportSummary`, `SpecData`, `TestData`, `NeoReporterOptions`, `MergeOpti
 | `showTeamName` | `true` | `--hide-team` sets `false`. |
 | `timeZone`, `theme` | the first report's | `--time-zone`, `--theme` |
 | `outputs` | `['html', 'markdown']` | `--outputs` |
-| `reportUrl` | none | `--report-url` |
+| `reportUrl` | none (the run page on GitHub Actions) | `--report-url` |
 | `history` | Azure DevOps, when a token is set | `--history-file <path>` sets `{ provider: 'file', path }`, `--no-history` sets `false`. |
 | `redact`, `includeTestCode`, `maxEmbedMb`, `assets` | as for the plugin | none |
 
 ## JSON report
 
-The `json` output is the stable contract for your own dashboards. A run writes `<name>.<id>.json`, where the id comes from the browser, base URL, viewport and spec files. A merged report writes `<name>.json`.
+The `json` output is the stable contract for your own dashboards. A run writes `<name>.<id>.json`, where the id comes from the browser name (not its version), base URL and viewport, plus the parallel job slot on Azure Pipelines (`System.JobPositionInPhase`) or GitLab (`CI_NODE_INDEX`), or else the spec files. A merged report writes `<name>.json`.
 
 | Field | What it holds |
 | --- | --- |
 | `schemaVersion` | Version of the JSON shape, `1` since 2.0.0. |
 | `reporterVersion` | Version of `cypress-neo-reporter` that wrote the file. |
 | `projectName`, `suiteLabel`, `teamName` | Names shown in the header. |
-| `timestamp` | When the report was built, ISO 8601. |
+| `timestamp` | When the report was built, ISO 8601. A merged report has the newest merged run's. |
 | `browser` | Browser and version. A merged report lists every browser, comma-separated. |
 | `environment` | The target URL (`baseUrl`). |
 | `resolution` | The viewport. |
@@ -304,7 +312,7 @@ The `json` output is the stable contract for your own dashboards. A run writes `
 | `specs[]` | One entry per spec: `specFile`, `specName`, `owner`, `browser`, `testingType` (`e2e` or `component`), `duration`, `passes`, `failures`, `pending`, `skipped`, `total`, `video` and `tests[]`. |
 | `specs[].tests[]` | `title` (the title path as an array), `fullTitle` (joined with ` › `), `state` (`passed`, `flaky`, `failed`, `pending` or `skipped`), `duration`, `startedAt`, `displayError`, `attempts`, `steps`, `businessGoal`, `code`, `screenshots`, `video`, `network`, `consoleErrors` and `tags`. |
 | `ci` | `branch`, `commit`, `build` and `release`, with links. |
-| `history` | The history the report compared with: `family`, `source`, `runs`, `tests` (for each full title, a code per earlier run, oldest first: `P`, `F`, `S`, or `-` when it did not run) and `durations` (median passing duration in milliseconds). |
+| `history` | The history the report compared with: `family`, `source`, `runs`, `tests` (for each `<spec file> › <full title>`, as in `quarantine.json` and the gate output, a code per earlier run, oldest first: `P`, `F`, `S`, or `-` when it did not run) and `durations` (median passing duration in milliseconds, same keys). |
 | `timeZone`, `theme` | Display settings. |
 | `mergedFrom` | How many runs were merged. Only on merged reports. |
 

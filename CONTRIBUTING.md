@@ -34,7 +34,7 @@ npm run e2e
 - Keep the report a single file that works under its Content-Security-Policy: no external requests, inline script and style, `data:` and `blob:` media only.
 - Check new UI in both the light and the dark theme.
 - Add a test for every bug fix and every new option. Tests import internals from their own module, such as `src/history`, because `src/index.ts` exports only the public API. Tests with hostile input for the HTML, Markdown and prompts live in `test/render-security.test.ts`.
-- Add every new option name to `KNOWN_OPTION_KEYS` in `src/validate.ts`, or it prints an unknown-option warning.
+- Add every new option name to `KNOWN_OPTION_KEYS` in `src/validate.ts` (or to `MERGE_OPTION_KEYS` when only `mergeReports` takes it), or it prints an unknown-option warning.
 - Add a line to `CHANGELOG.md` under "Unreleased".
 
 ## Project layout
@@ -63,4 +63,4 @@ npm run e2e
 2. Rename the "Unreleased" heading in `CHANGELOG.md` to the new version and add an empty "Unreleased" above it.
 3. Commit, then `git tag vX.Y.Z && git push origin vX.Y.Z`.
 
-The Release workflow publishes the tag to npm with trusted publishing and provenance. Nobody publishes from a laptop. `npm pack` and `npm publish` build `dist/` through `prepack`. A prerelease version needs an npm dist-tag, which the workflow does not pass.
+The Release workflow publishes the tag to npm with trusted publishing and provenance. Nobody publishes from a laptop. The workflow runs `npm ci` and `npm publish --provenance`. `prepublishOnly` runs the typecheck and tests and `prepack` builds `dist/`, so a failing check stops the publish. `npm pack` builds through `prepack` too. A prerelease version needs an npm dist-tag, which the workflow does not pass.

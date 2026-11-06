@@ -4,7 +4,7 @@ On GitHub Actions the reporter reads the run from the environment, links the rep
 
 - **Build links.** Branch, commit and run number in the report header, with the commit and the run linked to GitHub. On pull requests these are the pull request's branch and head commit, not the merge commit GitHub checks out.
 - **Job summary.** Failure groups and flaky tests on the run's summary page, added after whatever else the step wrote there. The plugin and `neo-reporter merge` both add one.
-- **Report link.** The summary links to the run, where the report artifact is listed. Set `reportUrl` or `--report-url` to point it somewhere else.
+- **Report link.** The summary and the Slack or Teams message link to the run, where the report artifact is listed. Set `reportUrl` or `--report-url` to point them somewhere else.
 
 Failure history comes from a history file that the workflow keeps in the Actions cache, see [Run history](#run-history).
 

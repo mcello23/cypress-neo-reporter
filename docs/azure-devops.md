@@ -14,7 +14,7 @@ To run it on your machine, set `AZURE_DEVOPS_PAT` to a personal access token wit
 
 Without a token the report is still written, without history and without the new or known labels.
 
-Use an `https://` organization URL. When `history.organization` starts with `http://`, the token is sent unencrypted and the run prints a warning.
+Use an `https://` organization URL. When the address starts with `http://`, whether it comes from `history.organization` or, on an on-premises agent, from `SYSTEM_TEAMFOUNDATIONCOLLECTIONURI` or `SYSTEM_COLLECTIONURI`, the token is sent unencrypted and the run warns: "The Azure DevOps address is http://, so the token goes unencrypted to <url>".
 
 Behind a corporate proxy, Node's built-in `fetch` ignores `HTTPS_PROXY` and `NO_PROXY` unless `NODE_USE_ENV_PROXY=1` is set, on a Node version that supports it.
 
@@ -64,7 +64,7 @@ Let the Cypress step finish with `continueOnError: true`, keep the publish steps
     displayName: Quality gate
 ```
 
-The glob matches the one run JSON on a clean agent. `--fail-on new` needs the history from step 1. Secret variables are not passed to scripts unless you map them through `env`, as above. For parallel jobs, merge first and pass the same flags to `neo-reporter merge`, so the gate and the post run once. Flags and exit codes are in [options.md](options.md#cli).
+The glob matches the one run JSON on a clean agent. `--fail-on new` needs the history from step 1. Secret variables are not passed to scripts unless you map them through `env`, as above. In parallel jobs the run JSON's `<id>` is built from `System.JobPositionInPhase` instead of the spec files, so each job slot keeps one file name across re-runs. For parallel jobs, merge first and pass the same flags to `neo-reporter merge`, so the gate and the post run once. Flags and exit codes are in [options.md](options.md#cli).
 
 ## How history finds earlier runs
 

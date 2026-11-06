@@ -29,7 +29,7 @@ e2e:
 
 ## Sharded runs
 
-Every shard writes the same HTML, JUnit and summary file names, so each one moves its reports into its own folder before the artifacts are collected. The `e2e-report` job gets all of them through `needs` and merges them into one report.
+Every shard writes the same HTML, JUnit and summary file names, so each one moves its reports into its own folder before the artifacts are collected. The `e2e-report` job gets all of them through `needs` and merges them into one report. With `parallel:`, the `<id>` in each job's run JSON name is built from `CI_NODE_INDEX` instead of the spec files, so a retried job keeps its file name.
 
 ```yaml
 e2e:

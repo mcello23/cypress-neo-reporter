@@ -87,7 +87,7 @@ Files are written to `cypress/reports` and named after `reportName`, or `project
 | `E2E-regression.junit.xml` | For any CI test tab: Azure DevOps, GitLab, Jenkins. |
 | `E2E-regression.summary.md` | A short summary for pipeline pages and pull request comments. |
 
-The `<id>` is 8 characters built from the browser, base URL, viewport and spec files, so machines that run different specs do not overwrite each other's JSON, and a re-run replaces its own file. A merged JSON is plain `E2E-regression.json`. The JSON carries `schemaVersion` and `reporterVersion`; build dashboards on that contract.
+The `<id>` is 8 characters built from the browser name (not its version), base URL and viewport, plus the parallel job slot on Azure Pipelines (`System.JobPositionInPhase`, when the job runs in parallel) or GitLab (`CI_NODE_INDEX`), or else the spec files. Parallel machines do not overwrite each other's JSON, and a re-run or a browser update replaces its own file. On Azure Pipelines and GitLab, so does a rebalanced spec split. A merged JSON is plain `E2E-regression.json`. The JSON carries `schemaVersion` and `reporterVersion`; build dashboards on that contract.
 
 ## Options
 
@@ -195,7 +195,7 @@ npx neo-reporter gate cypress/reports/E2E-regression.*.json --fail-on new --min-
 
 `--fail-on new` fails only on tests that did not fail the last time they ran, new tests included, so it needs run history. `--fail-on failed` fails on any failure. List tests you already know are broken in a `quarantine.json`, and the gate does not count them. On parallel runs, pass the same flags to `merge`.
 
-`neo-reporter notify` posts the counts, new failures and top failure groups to Slack or Microsoft Teams. Keep the webhook in a secret and pass it as `NEO_SLACK_WEBHOOK` or `NEO_TEAMS_WEBHOOK`. `merge` posts too when a webhook is set, so post from one place, once per pipeline.
+`neo-reporter notify` posts the counts, new failures and top failure groups to Slack or Microsoft Teams. Keep the webhook in a secret and pass it as `NEO_SLACK_WEBHOOK` or `NEO_TEAMS_WEBHOOK`. Without `--report-url`, the message links the run page on GitHub Actions, as `summary.md` does. `merge` posts too when a webhook is set, so post from one place, once per pipeline.
 
 The flags, the quarantine format and the exit codes are in [docs/options.md](docs/options.md#cli).
 
@@ -220,7 +220,7 @@ The report holds what the run captured, so share it the way you share test logs:
 - The target URL, branch, commit and spec owners (git author names).
 - Screenshots and video of failed and flaky tests.
 
-By default `redact` replaces `Authorization`, `Cookie` and `Set-Cookie` values, bearer tokens, JWTs and passwords in URLs with `[redacted]`, and drops the query string from request URLs. Screenshots and videos are never redacted. Details are in [docs/options.md](docs/options.md#redaction).
+By default `redact` replaces `Authorization`, `Cookie` and `Set-Cookie` values, bearer tokens, JWTs, passwords in URLs, values of JSON keys such as `password`, `secret`, `token` and `api_key`, and the URL parameters `token`, `access_token`, `sig`, `code`, `key` and `password` with `[redacted]`. It also drops the query string from request URLs. Screenshots and videos are never redacted. Details are in [docs/options.md](docs/options.md#redaction).
 
 The HTML makes no network requests, and its Content-Security-Policy blocks them. Copying an AI prompt is different: what you paste goes to that assistant's provider.
 
@@ -235,7 +235,7 @@ The HTML makes no network requests, and its Content-Security-Policy blocks them.
     const neo = createNeoReporter(config, { reportName: 'E2E regression' });
     on('task', neo.tasks);
     on('before:run', details => {
-      neo.beforeRun();
+      neo.beforeRun(details);
       otherPlugin.beforeRun(details);
     });
     on('after:spec', (spec, results) => {
@@ -253,7 +253,7 @@ The HTML makes no network requests, and its Content-Security-Policy blocks them.
   Or wrap `on` with [cypress-on-fix](https://github.com/bahmutov/cypress-on-fix) (`const on = require('cypress-on-fix')(cypressOn)`), which lets every plugin keep its handlers.
 - Video clips need `video: true` and are only cut for failed or flaky tests. Videos of passing specs are deleted, and a failing spec's full video is replaced by its clips, so Cypress Cloud and CI artifact steps do not see them. Set `keepVideos: true` to keep Cypress's videos.
 - Per-test clips need ffprobe, which ships with Cypress 15.16 and later. On older versions the failing spec's full video is embedded instead.
-- Screenshots are matched to a test by Cypress's default file name. A screenshot saved under a custom name, such as `cy.screenshot('cart')`, is not attached.
+- Screenshots are matched to a test by the file name Cypress gives them by default. This includes screenshots taken in hooks, titles that Cypress cleans up (trailing dots and spaces, characters such as `: / ? " < > |` are removed) and long names that Cypress cuts at 254 bytes. A screenshot saved under a custom name, such as `cy.screenshot('cart')`, is not attached. A cut name that two failed or flaky tests share in their first ~250 bytes is attached to both.
 - Failed requests are recorded from the browser's resource timing, which reports status codes in Chromium-based browsers only.
 - Tags come from titles only. The `{ tags }` config of @cypress/grep is not read yet.
 - Run history is not kept per browser.
@@ -261,6 +261,7 @@ The HTML makes no network requests, and its Content-Security-Policy blocks them.
 ## Troubleshooting
 
 - **"Steps are not recorded" in the command log.** The plugin is not registered for this config, or `setupNodeEvents` does not return the config. Use `return neoReporter(on, config, options)`.
+- **"setupNodeEvents did not return the config"** in the run log. Steps, test code, failed requests and console errors are not recorded for this run. End `setupNodeEvents` with `return neoReporter(on, config, options)`.
 - **"Ignoring unknown option".** An option name is misspelled. The warning lists the names it knows.
 - **Cypress fails to start or verify.** The shell sets `ELECTRON_RUN_AS_NODE=1`, as VS Code terminals can. Run `unset ELECTRON_RUN_AS_NODE` first, or use another terminal.
 - **"Another plugin replaced neo-reporter's before:run handler".** A plugin registered run events after `neoReporter`. See [Known limitations](#known-limitations).

@@ -68,10 +68,12 @@
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
     "demo": "tsx scripts/demo.ts",
-    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+    "e2e": "node e2e/run.mjs",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run typecheck && npm test"
   },
   "peerDependencies": {
-    "cypress": ">=15"
+    "cypress": "^15.0.0 || ^16.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.19.43",

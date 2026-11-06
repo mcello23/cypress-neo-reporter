@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { computePassRate } from './format';
-import { historyStatus, type FailedTest } from './prompts';
+import { historyStatus, testPath, type FailedTest } from './prompts';
 import type { ReportSummary } from './types';
 
 export const FAIL_ON = ['new', 'failed'] as const;
@@ -25,7 +25,6 @@ export function readQuarantine(file?: string): Map<string, string> {
   return new Map(Object.entries(entries as Record<string, string>));
 }
 
-const testPath = ({ spec, test }: FailedTest) => `${spec.specFile} › ${test.fullTitle}`;
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
 
 export function checkGate(summary: ReportSummary, { failOn, minPassRate, quarantine = new Map() }: GateOptions): boolean {
@@ -38,7 +37,7 @@ export function checkGate(summary: ReportSummary, { failOn, minPassRate, quarant
   const tests = summary.specs.flatMap(spec => spec.tests.map(test => ({ spec, test })));
   const quarantined = tests.filter(test => reason(test) !== undefined);
   const failed = tests.filter(test => test.test.state === 'failed' && reason(test) === undefined);
-  const failing = failOn === 'new' ? failed.filter(({ test }) => historyStatus(summary, test) === 'new') : failOn ? failed : [];
+  const failing = failOn === 'new' ? failed.filter(test => historyStatus(summary, test) === 'new') : failOn ? failed : [];
   const passRate = computePassRate(
     summary.totalPassed - quarantined.filter(({ test }) => test.state === 'passed' || test.state === 'flaky').length,
     summary.totalTests - quarantined.length

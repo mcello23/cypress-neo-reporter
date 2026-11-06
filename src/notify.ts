@@ -1,5 +1,6 @@
 import { ciSourceLine } from './ci';
 import { firstLine, formatDuration } from './format';
+import { reportLink } from './markdown';
 import { collectFailureGroups, collectTestsByState, historyStatus, type HistoryStatus } from './prompts';
 import type { ReportSummary } from './types';
 
@@ -27,7 +28,7 @@ function runDigest(summary: ReportSummary, reportUrl?: string): RunDigest {
   const groups = collectFailureGroups(summary);
   const flaky = collectTestsByState(summary, 'flaky').length;
   const failed = groups.reduce((count, group) => count + group.tests.length, 0);
-  const tests = summary.specs.flatMap(spec => spec.tests);
+  const tests = summary.specs.flatMap(spec => spec.tests.map(test => ({ spec, test })));
   const historyCount = (status: HistoryStatus) => tests.filter(test => historyStatus(summary, test) === status).length;
   const name = summary.suiteLabel ? `${summary.projectName} - ${summary.suiteLabel}` : summary.projectName;
   const failures = groups.slice(0, TOP_FAILURE_GROUPS).map(group => `${group.tests.length}× ${clip(group.message)}`);
@@ -60,6 +61,7 @@ function slackPayload({ title, lines, failures, reportUrl }: RunDigest) {
 
 function teamsPayload({ title, lines, failures, reportUrl }: RunDigest) {
   const textBlock = (text: string, style: Record<string, string> = {}) => ({ type: 'TextBlock', text, wrap: true, ...style });
+  const plainBlock = (text: string) => ({ type: 'RichTextBlock', spacing: 'None', inlines: [{ type: 'TextRun', text }] });
   return {
     type: 'message',
     attachments: [
@@ -72,7 +74,7 @@ function teamsPayload({ title, lines, failures, reportUrl }: RunDigest) {
           body: [
             textBlock(title, { size: 'Medium', weight: 'Bolder' }),
             ...lines.map(line => textBlock(line, { spacing: 'None' })),
-            ...(failures.length ? [textBlock('Top failures', { weight: 'Bolder' }), ...failures.map(failure => textBlock(`• ${failure}`, { spacing: 'None' }))] : [])
+            ...(failures.length ? [textBlock('Top failures', { weight: 'Bolder' }), ...failures.map(failure => plainBlock(`• ${failure}`))] : [])
           ],
           actions: reportUrl ? [{ type: 'Action.OpenUrl', title: 'Open the full report', url: reportUrl }] : undefined
         }
@@ -82,7 +84,7 @@ function teamsPayload({ title, lines, failures, reportUrl }: RunDigest) {
 }
 
 export async function notify(summary: ReportSummary, webhooks: Webhooks, reportUrl?: string): Promise<boolean> {
-  const digest = runDigest(summary, reportUrl);
+  const digest = runDigest(summary, reportLink(summary, reportUrl));
   const targets = [
     ['Slack', webhooks.slack, slackPayload],
     ['Microsoft Teams', webhooks.teams, teamsPayload]

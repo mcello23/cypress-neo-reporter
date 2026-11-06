@@ -103,7 +103,9 @@ function copyEvidence(specs: SpecData[], outputDir: string, assetsDir: string): 
 }
 
 function shardId(summary: ReportSummary): string {
-  const identity = [summary.browser, summary.environment, summary.resolution, ...summary.specs.map(spec => spec.specFile).sort()];
+  const { SYSTEM_TOTALJOBSINPHASE, SYSTEM_JOBPOSITIONINPHASE, CI_NODE_INDEX } = process.env;
+  const slot = Number(SYSTEM_TOTALJOBSINPHASE) > 1 ? SYSTEM_JOBPOSITIONINPHASE : CI_NODE_INDEX;
+  const identity = [summary.browser.split(' ')[0], summary.environment, summary.resolution, ...(slot ? [slot] : summary.specs.map(spec => spec.specFile).sort())];
   return createHash('sha1').update(identity.join('\n')).digest('hex').slice(0, 8);
 }
 
@@ -122,7 +124,7 @@ export function needsHistory(outputs: readonly ReportOutput[]): boolean {
   return outputs.includes('html') || outputs.includes('markdown');
 }
 
-export function resolveOutputDir(projectDir: string, outputDir = DEFAULT_REPORTS_DIR): string {
+function resolveOutputDir(projectDir: string, outputDir = DEFAULT_REPORTS_DIR): string {
   return isAbsolute(outputDir) ? outputDir : join(projectDir, outputDir);
 }
 

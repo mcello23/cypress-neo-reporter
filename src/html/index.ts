@@ -11,6 +11,7 @@ import {
   historyStatus,
   testDomId,
   testHistoryCodes,
+  testPath,
   testSummaryLine,
   type FailedTest,
   type HistoryStatus,
@@ -190,15 +191,15 @@ export function generateHtmlReport(summary: ReportSummary): string {
           const flakyTag = isFlaky
             ? `<span class="flaky-tag" title="Failed on attempt 1, passed on attempt ${attemptCount}">Flaky</span>`
             : '';
-          const testHistoryStatus = historyStatus(summary, t);
-          const historyCodes = testHistoryCodes(summary, t);
+          const testHistoryStatus = historyStatus(summary, { spec, test: t });
+          const historyCodes = testHistoryCodes(summary, { spec, test: t });
           const historyTag =
             testHistoryStatus === 'new'
-              ? `<span class="history-tag history-tag-new" title="${escapeHtml(historySentence(summary, t) ?? '')}">New failure</span>`
+              ? `<span class="history-tag history-tag-new" title="${escapeHtml(historySentence(summary, { spec, test: t }) ?? '')}">New failure</span>`
               : testHistoryStatus === 'known'
-                ? `<span class="history-tag history-tag-known" title="${escapeHtml(historySentence(summary, t) ?? '')}">Failing ${failingStreak(historyCodes ?? '') + 1}×</span>`
+                ? `<span class="history-tag history-tag-known" title="${escapeHtml(historySentence(summary, { spec, test: t }) ?? '')}">Failing ${failingStreak(historyCodes ?? '') + 1}×</span>`
                 : testHistoryStatus === 'fixed'
-                  ? `<span class="history-tag history-tag-fixed" title="${escapeHtml(historySentence(summary, t) ?? '')}">Fixed</span>`
+                  ? `<span class="history-tag history-tag-fixed" title="${escapeHtml(historySentence(summary, { spec, test: t }) ?? '')}">Fixed</span>`
                   : '';
           const historyStripHtml =
             summary.history && historyCodes
@@ -206,7 +207,7 @@ export function generateHtmlReport(summary: ReportSummary): string {
             <div class="history-strip">
               <span class="history-strip-label">Last ${summary.history.runs.length} runs</span>
               <span class="history-dots" data-codes="${escapeHtml(historyCodes)}" data-current="${isFail ? 'F' : t.state === 'passed' || isFlaky ? 'P' : 'S'}" data-current-label="${STATUS_LABELS[t.state]}"></span>
-              <span class="history-strip-text">${escapeHtml(historySentence(summary, t) ?? '')}</span>
+              <span class="history-strip-text">${escapeHtml(historySentence(summary, { spec, test: t }) ?? '')}</span>
             </div>`
               : '';
 
@@ -459,7 +460,7 @@ export function generateHtmlReport(summary: ReportSummary): string {
       sub: !failedTests.length
         ? 'None this run'
         : summary.history
-          ? `${failedTests.filter(({ test }) => historyStatus(summary, test) === 'new').length} new · ${failedTests.filter(({ test }) => historyStatus(summary, test) === 'known').length} known`
+          ? `${failedTests.filter(failure => historyStatus(summary, failure) === 'new').length} new · ${failedTests.filter(failure => historyStatus(summary, failure) === 'known').length} known`
           : `${failureGroups.length} distinct error${failureGroups.length === 1 ? '' : 's'}`,
       tone: failedTests.length ? 'failed' : undefined
     },
@@ -659,7 +660,7 @@ export function generateHtmlReport(summary: ReportSummary): string {
     );
 
   const allTestsWithSpec = summary.specs.flatMap(spec => spec.tests.map(test => ({ spec, test })));
-  const testsWithStatus = (status: HistoryStatus) => allTestsWithSpec.filter(({ test }) => historyStatus(summary, test) === status);
+  const testsWithStatus = (status: HistoryStatus) => allTestsWithSpec.filter(item => historyStatus(summary, item) === status);
 
   const testRowButton = (failure: FailedTest, value: string) =>
     `<button type="button" class="panel-row" title="${escapeHtml(`${failure.spec.specName} › ${failure.test.fullTitle}`)}" onclick="openTest('${testDomId(summary, failure)}')">${statusIcon(failure.test.state)}<span class="panel-row-name">${escapeHtml(failure.test.title[failure.test.title.length - 1])}</span><span class="panel-row-value">${value}</span></button>`;
@@ -680,9 +681,9 @@ export function generateHtmlReport(summary: ReportSummary): string {
       items.length ? `<div class="panel-list">${items.map(item => testRowButton(item, value(item))).join('')}</div>` : emptyState(empty)
     );
 
-  const passFailFlips = (test: TestData) => {
+  const passFailFlips = ({ spec, test }: FailedTest) => {
     const current = test.state === 'failed' ? 'F' : test.state === 'passed' || test.state === 'flaky' ? 'P' : '';
-    const codes = `${testHistoryCodes(summary, test) ?? ''}${current}`.replace(/[^PF]/g, '');
+    const codes = `${testHistoryCodes(summary, { spec, test }) ?? ''}${current}`.replace(/[^PF]/g, '');
     return [...codes].filter((code, index) => index > 0 && code !== codes[index - 1]).length;
   };
 
@@ -724,12 +725,12 @@ export function generateHtmlReport(summary: ReportSummary): string {
         'Most unstable',
         'flaky',
         allTestsWithSpec
-          .map(item => ({ item, flips: passFailFlips(item.test) }))
+          .map(item => ({ item, flips: passFailFlips(item) }))
           .filter(({ flips }) => flips >= 2)
           .sort((a, b) => b.flips - a.flips)
           .slice(0, 5)
           .map(({ item }) => item),
-        item => `${passFailFlips(item.test)} flips`,
+        item => `${passFailFlips(item)} flips`,
         'No test went from pass to fail and back in the last runs.',
         'pass ↔ fail flips'
       )}`
@@ -749,14 +750,14 @@ export function generateHtmlReport(summary: ReportSummary): string {
         'time',
         allTestsWithSpec
           .filter(
-            ({ test }) =>
+            ({ spec, test }) =>
               (test.state === 'passed' || test.state === 'flaky') &&
               test.duration > 2000 &&
-              test.duration > 2 * (usualDurations[test.fullTitle] ?? Infinity)
+              test.duration > 2 * (usualDurations[testPath({ spec, test })] ?? Infinity)
           )
-          .sort((a, b) => b.test.duration / usualDurations[b.test.fullTitle] - a.test.duration / usualDurations[a.test.fullTitle])
+          .sort((a, b) => b.test.duration / usualDurations[testPath(b)] - a.test.duration / usualDurations[testPath(a)])
           .slice(0, 5),
-        ({ test }) => `${formatDuration(usualDurations[test.fullTitle])} → ${formatDuration(test.duration)}`,
+        ({ spec, test }) => `${formatDuration(usualDurations[testPath({ spec, test })])} → ${formatDuration(test.duration)}`,
         'No passing test took over twice its usual time.',
         'usual → this run'
       )

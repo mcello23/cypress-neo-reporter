@@ -9,6 +9,8 @@ import { sampleSummary } from './fixtures/summary';
 
 const CART_TEST = 'Cart summary › removes the last item';
 const CART_SPEC = 'cypress/e2e/cart/cart-summary.cy.ts';
+const CART_KEY = `${CART_SPEC} › ${CART_TEST}`;
+const SAVED_CARD_KEY = 'cypress/e2e/checkout/payment.cy.ts › Checkout › pays with a saved card';
 
 interface AdoResult {
   automatedTestName?: string;
@@ -128,9 +130,9 @@ test('Azure DevOps history matches the test names of the JUnit file this package
       label
     );
     assert.equal(Object.keys(summary.history.tests).length, 74, label);
-    assert.equal(summary.history.tests[CART_TEST], 'PPF', label);
-    assert.equal(summary.history.durations?.['Checkout › pays with a saved card'], 2000, label);
-    assert.equal(summary.history.durations?.[CART_TEST], 1500, label);
+    assert.equal(summary.history.tests[CART_KEY], 'PPF', label);
+    assert.equal(summary.history.durations?.[SAVED_CARD_KEY], 2000, label);
+    assert.equal(summary.history.durations?.[CART_KEY], 1500, label);
   }
   assert.ok(requested.every(url => url.href.startsWith('https://dev.azure.com/your-org/your-project/_apis/')));
   assert.ok(requested.filter(url => url.pathname.endsWith('/test/runs')).every(url => url.searchParams.get('branchName') === 'refs/heads/main'));
@@ -187,8 +189,8 @@ test('file history keeps one slim line per run and prefers runs of the same bran
       ['20261104.1', 74, 7]
     ]
   );
-  assert.equal(current.history.tests[CART_TEST], 'PF');
-  assert.equal(current.history.durations?.[CART_TEST], 3000);
+  assert.equal(current.history.tests[CART_KEY], 'PF');
+  assert.equal(current.history.durations?.[CART_KEY], 3000);
   assert.match(String(log.mock.calls.at(-1)?.arguments[0]), /Loaded 2 previous runs of "E2E regression" from neo-history\.jsonl/);
 
   const fresh = runOn(6, 'fresh-branch');
@@ -202,7 +204,7 @@ test('file history keeps one slim line per run and prefers runs of the same bran
   const lines = text.trim().split('\n').map(line => JSON.parse(line));
   assert.equal(lines.length, 6);
   assert.deepEqual(Object.keys(lines[5]).sort(), ['branch', 'date', 'label', 'name', 'tests']);
-  assert.deepEqual(lines[5].tests[`${CART_SPEC} › ${CART_TEST}`], { s: 'F', d: 14_200 });
+  assert.deepEqual(lines[5].tests[CART_KEY], { s: 'F', d: 14_200 });
   assert.equal(Object.keys(lines[5].tests).length, 74);
   assert.doesNotMatch(text, /base64|displayError|AssertionError/);
 });
@@ -241,7 +243,7 @@ test('merge writes one history line for the merged run instead of one per shard'
     result?.summary.history?.runs.map(run => run.label),
     ['20261101.1']
   );
-  assert.equal(result.summary.history.tests[CART_TEST], 'P');
+  assert.equal(result.summary.history.tests[CART_KEY], 'P');
   const dates = readFileSync(path, 'utf-8')
     .trim()
     .split('\n')
@@ -265,7 +267,7 @@ test('merge with a baseline report compares the merged run with that report', as
     result.summary.history.runs.map(run => run.label),
     ['20261101.1']
   );
-  assert.equal(result.summary.history.tests[CART_TEST], 'P');
+  assert.equal(result.summary.history.tests[CART_KEY], 'P');
   assert.match(readFileSync(result.files.markdown!, 'utf-8'), /History vs the last 1 runs of "E2E regression": \*\*1 new failures\*\* · 6 known · 0 fixed/);
   await assert.rejects(mergeReports({ reportRoot: root, baseline: join(root, 'missing.json') }), /baseline/);
 });
@@ -281,9 +283,9 @@ test('the run history panel names the provider it came from', () => {
 test('Most unstable ranks tests that flip between pass and fail above tests that keep failing', () => {
   const summary = sampleSummary();
   summary.history!.tests = {
-    'Checkout › pays with a saved card': 'PFPPFPPFPP',
-    'Checkout › scenario 1': 'PPPPFPPPPP',
-    [CART_TEST]: 'PPFFFFFFFF'
+    [SAVED_CARD_KEY]: 'PFPPFPPFPP',
+    'cypress/e2e/checkout/payment.cy.ts › Checkout › scenario 1': 'PPPPFPPPPP',
+    [CART_KEY]: 'PPFFFFFFFF'
   };
   const panel = panelHtml(generateHtmlReport(summary), 'Most unstable');
   assert.match(panel, /pays with a saved card<\/span><span class="panel-row-value">6 flips/);
@@ -294,10 +296,10 @@ test('Most unstable ranks tests that flip between pass and fail above tests that
 test('Slower than usual lists passing tests that took over twice their usual time', () => {
   const summary = sampleSummary();
   summary.history!.durations = {
-    'Checkout › pays with a saved card': 2000,
-    'Checkout › scenario 1': 1000,
-    'Checkout › scenario 3': 1000,
-    [CART_TEST]: 2000
+    [SAVED_CARD_KEY]: 2000,
+    'cypress/e2e/checkout/payment.cy.ts › Checkout › scenario 1': 1000,
+    'cypress/e2e/checkout/payment.cy.ts › Checkout › scenario 3': 1000,
+    [CART_KEY]: 2000
   };
   const html = generateHtmlReport(summary);
   const panel = panelHtml(html, 'Slower than usual');

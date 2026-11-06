@@ -1,12 +1,12 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { computePassRate } from './format';
 import { attachRunHistory, createBaselineHistoryLoader, createHistoryLoader } from './history';
 import { packageVersion } from './html/assets';
 import { needsHistory, writeReportOutputs, type ReportFiles } from './output';
 import { applyRedaction } from './redact';
 import { evidenceFiles } from './summary';
-import { DEFAULT_REPORTS_DIR, MERGE_OUTPUTS, SCHEMA_VERSION, STEPS_FILE_NAME, type MergeOptions, type ReportSummary } from './types';
+import { DEFAULT_REPORTS_DIR, MERGE_OUTPUTS, SCHEMA_VERSION, type EmbeddedFile, type MergeOptions, type ReportSummary } from './types';
 import { validateOptions } from './validate';
 
 export interface MergeResult {
@@ -19,7 +19,7 @@ function findReportJsonFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
     const entryPath = join(dir, entry.name);
     if (entry.isDirectory()) return findReportJsonFiles(entryPath);
-    return entry.name.endsWith('.json') && entry.name !== STEPS_FILE_NAME ? [entryPath] : [];
+    return entry.name.endsWith('.json') ? [entryPath] : [];
   });
 }
 
@@ -53,9 +53,19 @@ function readReportJson(filePath: string): ReportSummary | null {
     if (!data.mergedFrom && data.schemaVersion !== SCHEMA_VERSION) {
       console.warn(`[neo-reporter] ${filePath} uses report schema ${data.schemaVersion ?? 'none'} (reporter ${data.reporterVersion ?? 'unknown'}), expected ${SCHEMA_VERSION}. The merged report may be incomplete.`);
     }
-    evidenceFiles(data.specs).forEach(({ file }) => {
-      if (!isAbsolute(file.path)) file.path = join(dirname(filePath), file.path);
+    const dir = dirname(filePath);
+    const usable = (file: EmbeddedFile) => {
+      const path = relative(dir, resolve(dir, file.path));
+      return Boolean(file.base64) || !(path.startsWith('..') || isAbsolute(path));
+    };
+    data.specs.forEach(spec => {
+      if (spec.video && !usable(spec.video)) delete spec.video;
+      spec.tests.forEach(test => {
+        test.screenshots = test.screenshots?.filter(usable);
+        if (test.video && !usable(test.video)) delete test.video;
+      });
     });
+    evidenceFiles(data.specs).forEach(({ file }) => (file.path = resolve(dir, file.path)));
     return data;
   } catch (error) {
     console.warn(`[neo-reporter] Skipping unreadable report file ${filePath}: ${error}`);
@@ -103,7 +113,7 @@ export async function mergeReports(options: MergeOptions = {}): Promise<MergeRes
     schemaVersion: SCHEMA_VERSION,
     reporterVersion: packageVersion(),
     projectName: options.projectName ?? first.projectName,
-    timestamp: new Date().toISOString(),
+    timestamp: summaries.map(summary => summary.timestamp).sort().pop() ?? new Date().toISOString(),
     browser: [...new Set(summaries.map(summary => summary.browser).filter(Boolean))].join(', '),
     environment: latest(summary => summary.environment),
     resolution: latest(summary => summary.resolution),

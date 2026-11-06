@@ -249,7 +249,7 @@ test('notify posts a Slack message and a Teams Adaptive Card', async t => {
   const [attachment] = teams.body.attachments;
   assert.equal(attachment.contentType, 'application/vnd.microsoft.card.adaptive');
   assert.equal(attachment.content.type, 'AdaptiveCard');
-  const texts: string[] = attachment.content.body.map((block: { text: string }) => block.text);
+  const texts: string[] = attachment.content.body.map((block: { text?: string; inlines?: Array<{ text: string }> }) => block.text ?? block.inlines?.[0].text);
   assert.equal(texts[0], '❌ acme-storefront - E2E regression');
   assert.ok(texts.includes('6 new failures · 1 known · 0 fixed'));
   assert.ok(texts.includes('• 1× Expected <button> & <input> to be enabled'));
@@ -259,11 +259,11 @@ test('notify posts a Slack message and a Teams Adaptive Card', async t => {
 test('notify lists the five largest failure groups and leaves history out when there is none', async t => {
   const server = await webhookServer(t);
   t.mock.method(console, 'log', () => undefined);
-  const summary = { ...sampleSummary(), history: undefined };
+  const summary = { ...sampleSummary(), history: undefined, ci: { ...sampleSummary().ci, buildUrl: undefined } };
   summary.specs.flatMap(spec => spec.tests).filter(test => test.state === 'failed').forEach((test, index) => (test.displayError = `Error ${'ABCDEFG'[index]}`));
   assert.equal(await notify(summary, { teams: server.url('/teams') }), true);
   const card = server.received[0].body.attachments[0].content;
-  const texts: string[] = card.body.map((block: { text: string }) => block.text);
+  const texts: string[] = card.body.map((block: { text?: string; inlines?: Array<{ text: string }> }) => block.text ?? block.inlines?.[0].text);
   assert.equal(texts.filter(text => text.startsWith('• 1× Error')).length, 5);
   assert.ok(texts.includes('• …and 2 more failure groups'));
   assert.ok(!texts.some(text => text.includes('new failures')));

@@ -68,30 +68,35 @@ function buildPromptContext(summary: ReportSummary): string[] {
 
 export type HistoryStatus = 'new' | 'known' | 'fixed';
 
-export function testHistoryCodes(summary: ReportSummary, test: TestData): string | null {
-  return summary.history?.tests[test.fullTitle] ?? null;
+export function testPath({ spec, test }: FailedTest): string {
+  return `${spec.specFile} › ${test.fullTitle}`;
+}
+
+export function testHistoryCodes(summary: ReportSummary, failure: FailedTest): string | null {
+  return summary.history?.tests[testPath(failure)] ?? null;
 }
 
 export function failingStreak(codes: string): number {
   return codes.length - codes.replace(/F+$/, '').length;
 }
 
-export function historyStatus(summary: ReportSummary, test: TestData): HistoryStatus | null {
+export function historyStatus(summary: ReportSummary, failure: FailedTest): HistoryStatus | null {
   if (!summary.history) return null;
-  const codes = testHistoryCodes(summary, test);
+  const { test } = failure;
+  const codes = testHistoryCodes(summary, failure);
   const last = codes?.replace(/-/g, '').slice(-1);
   if (test.state === 'failed') return last === 'F' ? 'known' : 'new';
   if (test.state === 'passed' && last === 'F') return 'fixed';
   return null;
 }
 
-export function historySentence(summary: ReportSummary, test: TestData): string | null {
+export function historySentence(summary: ReportSummary, failure: FailedTest): string | null {
   if (!summary.history) return null;
-  const codes = testHistoryCodes(summary, test);
+  const codes = testHistoryCodes(summary, failure);
   if (!codes) return 'No result in the previous runs (new or renamed test).';
   const runs = codes.replace(/-/g, '').length;
   const failures = codes.split('F').length - 1;
-  const status = historyStatus(summary, test);
+  const status = historyStatus(summary, failure);
   const detail =
     status === 'known'
       ? `; also failed in the ${failingStreak(codes)} run${failingStreak(codes) === 1 ? '' : 's'} before this one (known failure)`
@@ -119,10 +124,10 @@ function buildFailureBlock({ spec, test }: FailedTest, heading: string, summary?
     `Duration: ${formatDuration(test.duration)} · Attempts: ${test.attempts?.length ?? 1}`
   ];
   if (test.businessGoal) lines.push(`Business goal: ${test.businessGoal.goal}`);
-  const history = summary && historySentence(summary, test);
+  const history = summary && historySentence(summary, { spec, test });
   if (history) {
     lines.push(
-      `History (${summary.history?.family}, oldest to newest: ${testHistoryCodes(summary, test) ?? 'none'}; P passed, F failed, S skipped, - not run): ${history}`
+      `History (${summary.history?.family}, oldest to newest: ${testHistoryCodes(summary, { spec, test }) ?? 'none'}; P passed, F failed, S skipped, - not run): ${history}`
     );
   }
   lines.push('Error:', fence(test.displayError || 'No error message captured'));
@@ -222,6 +227,6 @@ export function testSummaryLine({ spec, test }: FailedTest): string {
 }
 
 export function testPathWithOwner({ spec, test }: FailedTest, summary: ReportSummary): string {
-  const isNew = historyStatus(summary, test) === 'new';
+  const isNew = historyStatus(summary, { spec, test }) === 'new';
   return `${isNew ? '[NEW] ' : ''}${spec.specFile} › ${test.fullTitle}${spec.owner ? ` (${spec.owner})` : ''}`;
 }

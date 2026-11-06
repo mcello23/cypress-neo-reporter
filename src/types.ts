@@ -1,4 +1,3 @@
-export const STEPS_FILE_NAME = 'neo-reporter-steps.json';
 export const SPEC_OWNERS_FILE_NAME = 'spec-owners.json';
 export const DEFAULT_REPORTS_DIR = 'cypress/reports';
 export const REPORT_OUTPUTS = ['html', 'json', 'junit', 'markdown'] as const;

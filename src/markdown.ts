@@ -27,7 +27,7 @@ export function generateMarkdownSummary(summary: ReportSummary, reportUrl?: stri
   const passed = summary.totalPassed - flaky.length;
   const title = summary.suiteLabel ? `${summary.projectName} - ${summary.suiteLabel}` : summary.projectName;
   const source = ciSourceLine(summary.ci);
-  const allTests = summary.specs.flatMap(spec => spec.tests);
+  const allTests = summary.specs.flatMap(spec => spec.tests.map(test => ({ spec, test })));
   const historyCounts = (status: HistoryStatus) => allTests.filter(test => historyStatus(summary, test) === status).length;
   const lines = [
     `### ${failed > 0 ? '❌' : flaky.length > 0 ? '⚠️' : '✅'} ${title}`,
@@ -68,8 +68,12 @@ export function generateMarkdownSummary(summary: ReportSummary, reportUrl?: stri
   return lines.join('\n') + '\n';
 }
 
+export function reportLink(summary: ReportSummary, reportUrl?: string): string | undefined {
+  return reportUrl || (process.env.GITHUB_ACTIONS ? summary.ci?.buildUrl : undefined);
+}
+
 export function writeMarkdownSummary(filePath: string, summary: ReportSummary, reportUrl?: string): void {
-  const markdown = generateMarkdownSummary(summary, reportUrl || (process.env.GITHUB_ACTIONS ? summary.ci?.buildUrl : undefined));
+  const markdown = generateMarkdownSummary(summary, reportLink(summary, reportUrl));
   writeFileSync(filePath, markdown, 'utf-8');
   if (process.env.TF_BUILD) console.log(`##vso[task.uploadsummary]${filePath}`);
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, markdown, 'utf-8');

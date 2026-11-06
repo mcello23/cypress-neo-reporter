@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import { adoCollectionUrl } from './ci';
 import { historyKey } from './junit';
+import { testPath } from './prompts';
 import type { HistoryLoader, HistoryOptions, HistoryRun, ReportSummary, RunHistory, SpecData, TestData } from './types';
 
 const HISTORY_RUN_COUNT = 10;
@@ -80,9 +81,9 @@ function adoHistoryTarget(options: HistoryOptions, branch?: string): AdoHistoryT
     console.warn('[neo-reporter] Run history skipped: set history.organization and history.project to read Azure DevOps outside a pipeline.');
     return null;
   }
-  if (/^http:\/\//i.test(options.organization ?? '')) {
+  if (/^http:\/\//i.test(organizationUrl)) {
     console.warn(
-      `[neo-reporter] history.organization is http://, so the Azure DevOps token goes unencrypted to ${organizationUrl}. Use https:// where the server supports it.`
+      `[neo-reporter] The Azure DevOps address is http://, so the token goes unencrypted to ${organizationUrl}. Use https:// where the server supports it.`
     );
   }
   return {
@@ -251,9 +252,9 @@ function toRunHistory(
     for (const test of spec.tests) {
       const outcomes = runs.map(run => run.tests.get(key(spec, test)));
       const codes = outcomes.map(outcome => outcome?.s ?? '-').join('');
-      if (/[PFS]/.test(codes)) tests[test.fullTitle] = codes;
+      if (/[PFS]/.test(codes)) tests[testPath({ spec, test })] = codes;
       const passed = outcomes.flatMap(outcome => (outcome?.s === 'P' && outcome.d > 0 ? [outcome.d] : []));
-      if (passed.length > 0) durations[test.fullTitle] = median(passed);
+      if (passed.length > 0) durations[testPath({ spec, test })] = median(passed);
     }
   }
   return {
@@ -320,7 +321,7 @@ function readHistoryLines(path: string, mergedRuns: string[]): HistoryLine[] {
     .flatMap(text => {
       try {
         const line = JSON.parse(text) as HistoryLine;
-        return mergedRuns.includes(line.date) ? [] : [line];
+        return line?.tests && !mergedRuns.includes(line.date) ? [line] : [];
       } catch {
         return [];
       }

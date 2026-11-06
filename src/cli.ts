@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
+import { assertTimeZone } from './format';
 import { checkGate, FAIL_ON, QUARANTINE_FILE_NAME, readQuarantine, type FailOn, type GateOptions } from './gate';
 import { packageVersion } from './html/assets';
 import { mergeReports } from './merge';
@@ -99,6 +100,15 @@ function parseTheme(value?: string): ReportTheme | undefined {
   return value as ReportTheme;
 }
 
+function parseTimeZone(value?: string): string | undefined {
+  try {
+    assertTimeZone(value);
+  } catch {
+    throw new UsageError(`Unknown time zone: ${value}`);
+  }
+  return value;
+}
+
 const GATE_OPTIONS = {
   'fail-on': { type: 'string' },
   'min-pass-rate': { type: 'string' },
@@ -113,7 +123,8 @@ const NOTIFY_OPTIONS = {
 function parseGate(values: { 'fail-on'?: string; 'min-pass-rate'?: string; quarantine?: string }): GateOptions | null {
   const failOn = values['fail-on'] as FailOn | undefined;
   if (failOn !== undefined && !FAIL_ON.includes(failOn)) throw new UsageError(`Unknown --fail-on value: ${failOn}. Use ${FAIL_ON.join(' or ')}.`);
-  const minPassRate = values['min-pass-rate'] === undefined ? undefined : Number(values['min-pass-rate']);
+  const rate = values['min-pass-rate'];
+  const minPassRate = rate === undefined ? undefined : rate.trim() ? Number(rate) : NaN;
   if (minPassRate !== undefined && !(minPassRate >= 0 && minPassRate <= 100)) {
     throw new UsageError(`--min-pass-rate must be a number from 0 to 100, got ${values['min-pass-rate']}`);
   }
@@ -172,7 +183,7 @@ async function merge(args: string[]): Promise<number> {
     projectName: values.project,
     teamName: values.team,
     showTeamName: values['hide-team'] ? false : undefined,
-    timeZone: values['time-zone'],
+    timeZone: parseTimeZone(values['time-zone']),
     theme: parseTheme(values.theme),
     outputs: parseOutputs(values.outputs),
     reportUrl: values['report-url'],

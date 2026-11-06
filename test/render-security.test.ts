@@ -42,7 +42,7 @@ function hostileSummary(): ReportSummary {
   failed.displayError = HOSTILE_ERROR;
   failed.steps = [{ phase: 'STEP', message: `</script><script>alert("step")</script>` }];
   failed.screenshots = [{ name: 'shot.png', path: 'shot.png', base64: `data:image/png;base64,AAAA</script><script>alert("shot")</script>` }];
-  summary.history!.tests[failed.fullTitle] = `PF"><img src=x onerror=alert("codes")>`;
+  summary.history!.tests[`${spec.specFile} › ${failed.fullTitle}`] = `PF"><img src=x onerror=alert("codes")>`;
   return summary;
 }
 

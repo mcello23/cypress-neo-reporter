@@ -179,7 +179,7 @@ async function adoRunOutcomes(apiUrl: string, authorization: string, runId: numb
   }
 }
 
-async function mapWithLimit<T, R>(items: T[], limit: number, task: (item: T) => Promise<R>): Promise<R[]> {
+export async function mapWithLimit<T, R>(items: T[], limit: number, task: (item: T) => Promise<R>): Promise<R[]> {
   const results: R[] = new Array(items.length);
   let next = 0;
   const worker = async () => {
@@ -405,6 +405,32 @@ export function createHistoryLoader(
       return toAdoRunHistory(summary, family, await familyRuns(family));
     }
   };
+}
+
+export async function releaseStageTestsUrl(stage: string): Promise<string | undefined> {
+  const collectionUrl = adoCollectionUrl();
+  const authorization = adoAuthorization();
+  const { SYSTEM_TEAMPROJECT: project, RELEASE_RELEASEID: releaseId } = process.env;
+  if (!collectionUrl || !authorization || !project || !releaseId) return undefined;
+  if (!/^https:\/\//i.test(collectionUrl)) {
+    console.warn(`[neo-reporter] Tests tab link for ${stage} skipped: the Azure DevOps address is not https://.`);
+    return undefined;
+  }
+  const releases = collectionUrl
+    .replace('://dev.azure.com/', '://vsrm.dev.azure.com/')
+    .replace(/:\/\/([^./]+)\.visualstudio\.com\//, '://$1.vsrm.visualstudio.com/');
+  try {
+    const { body } = await adoGet<{ environments?: Array<{ id: number; name: string }> }>(
+      `${releases}${encodeURIComponent(project)}/_apis/release/releases/${releaseId}?api-version=7.1`,
+      authorization
+    );
+    const environment = body.environments?.find(item => item.name === stage);
+    if (!environment) throw new Error(`release ${releaseId} has no stage with that name`);
+    return `${collectionUrl}${encodeURIComponent(project)}/_releaseProgress?releaseId=${releaseId}&environmentId=${environment.id}&extensionId=ms.vss-test-web.test-result-in-release-environment-editor-tab&_a=release-environment-extension`;
+  } catch (error) {
+    console.warn(`[neo-reporter] Tests tab link for ${stage} unavailable: ${error instanceof Error ? error.message : error}`);
+    return undefined;
+  }
 }
 
 export async function attachRunHistory(summary: ReportSummary, loader: HistoryLoader | null | undefined): Promise<void> {

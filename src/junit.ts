@@ -1,4 +1,4 @@
-import { escapeXml, firstLine } from './format';
+import { escapeXml, firstLine, xmlCdata } from './format';
 import type { ReportSummary } from './types';
 
 export function historyKey(testName: string): string {
@@ -41,4 +41,20 @@ export function generateJUnitXml(summary: ReportSummary): string {
 
   xml += `</testsuites>\n`;
   return xml;
+}
+
+export function generateCarrierJUnit(testName: string, timestamp: string, text: string): string {
+  const name = escapeXml(testName);
+  return (
+    [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      `<testsuites name="${name}" tests="1" failures="0" time="0">`,
+      `  <testsuite name="${name}" timestamp="${escapeXml(timestamp.replace(/\.\d+Z$/, ''))}" tests="1" failures="0" errors="0" skipped="0" time="0">`,
+      `    <testcase name="${name}" classname="${name}" time="0">`,
+      `      <system-out>${xmlCdata(text)}</system-out>`,
+      '    </testcase>',
+      '  </testsuite>',
+      '</testsuites>'
+    ].join('\n') + '\n'
+  );
 }

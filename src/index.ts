@@ -1,5 +1,6 @@
 /// <reference types="cypress" preserve="true" />
-import { generateReports as writeRunReports, type ReportFiles } from './output';
+import type { ReportFiles } from './output';
+import { generateReports as writeRunReports } from './reporter';
 import type { NeoReporterOptions } from './types';
 import { validateOptions } from './validate';
 
@@ -9,11 +10,13 @@ export type {
   TestData,
   NeoReporterOptions,
   MergeOptions,
+  RemoteLanesOptions,
   HistoryOptions,
   ReportOutput,
   ReportTheme,
   RunHistory,
   HistoryRun,
+  LaneSummary,
   CiInfo,
   TestStep,
   TestAttempt,

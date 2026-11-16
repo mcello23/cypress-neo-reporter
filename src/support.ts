@@ -1,5 +1,5 @@
 /// <reference types="cypress" preserve="true" />
-import { PLUGIN_FLAG, RECORD_TASK } from './task';
+import { FAILED_REQUEST_STATUSES, PLUGIN_FLAG, RECORD_TASK } from './task';
 
 export type StepPhase = 'VISIT' | 'FIND' | 'STEP' | 'CHECK' | 'INFO';
 
@@ -37,9 +37,18 @@ let previousAttemptEndedAt = Date.now();
 let currentAttemptLeadMs = 0;
 let missingPluginLogged = false;
 
-function pluginRegistered(): boolean {
+function exposed(key: string): unknown {
   const cypress = Cypress as unknown as { expose?: (key: string) => unknown; env: (key: string) => unknown };
-  return Boolean(cypress.expose ? cypress.expose(PLUGIN_FLAG) : cypress.env(PLUGIN_FLAG));
+  return cypress.expose ? cypress.expose(key) : cypress.env(key);
+}
+
+function pluginRegistered(): boolean {
+  return Boolean(exposed(PLUGIN_FLAG));
+}
+
+function failedRequestStatuses(): unknown[] {
+  const statuses = exposed(FAILED_REQUEST_STATUSES);
+  return Array.isArray(statuses) ? statuses : [];
 }
 
 function pushDiagnostic<T>(list: T[], item: T): void {
@@ -63,10 +72,11 @@ Cypress.on('window:before:load', win => {
     pushDiagnostic(currentTestConsoleErrors, args.map(describeConsoleArg).join(' ').slice(0, 500));
     originalConsoleError(...args);
   };
+  const extraStatuses = failedRequestStatuses();
   new win.PerformanceObserver(list => {
     for (const entry of list.getEntries() as Array<PerformanceResourceTiming & { responseStatus?: number }>) {
       const status = entry.responseStatus ?? 0;
-      if (status >= FAILED_REQUEST_STATUS) {
+      if (status >= FAILED_REQUEST_STATUS || extraStatuses.includes(status)) {
         pushDiagnostic(currentTestNetworkFailures, { status, url: entry.name.slice(0, 300), timestamp: new Date().toISOString() });
       }
     }

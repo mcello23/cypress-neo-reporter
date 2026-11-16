@@ -42,6 +42,8 @@ assert.equal(junit.match(/<testcase /g)?.length, 3);
 assert.equal(junit.match(/<failure /g)?.length, 1);
 
 const tests = JSON.parse(readFileSync(join(reportsDir, jsonFile), 'utf-8')).specs.flatMap(spec => spec.tests);
+const shots = Object.fromEntries(tests.map(test => [test.state, test.screenshots.map(shot => shot.name)]));
+assert.deepEqual(shots, { failed: ['failing -- expects the wrong total (failed).png'], flaky: ['passes on the retry.png'], passed: [] }, 'screenshots were not attached by default name and by renamed title');
 assert.deepEqual(tests.map(test => test.state).sort(), ['failed', 'flaky', 'passed']);
 assert.ok(tests.every(test => test.steps.length > 0), 'cy.step was not recorded');
 

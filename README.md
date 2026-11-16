@@ -86,6 +86,8 @@ Files are written to `cypress/reports` and named after `reportName`, or `project
 | `E2E-regression.<id>.json` | Every result as data, for your own dashboards and for `neo-reporter merge`. |
 | `E2E-regression.junit.xml` | For any CI test tab: Azure DevOps, GitLab, Jenkins. |
 | `E2E-regression.summary.md` | A short summary for pipeline pages and pull request comments. |
+| `E2E-regression.<id>.summary.json` | With the `summary` output or `remoteLanes`, in `summaryDir`. The JSON without screenshots, videos, or steps and code of passed tests: a small file to upload from each lane and merge. |
+| `All-lanes.html` and `All-lanes.summary.md` | Only with `remoteLanes`: every lane found in your Azure Blob Storage folder, merged. |
 
 The `<id>` is 8 characters built from the browser name (not its version), base URL and viewport, plus the parallel job slot on Azure Pipelines (`System.JobPositionInPhase`, when the job runs in parallel) or GitLab (`CI_NODE_INDEX`), or else the spec files. Parallel machines do not overwrite each other's JSON, and a re-run or a browser update replaces its own file. On Azure Pipelines and GitLab, so does a rebalanced spec split. A merged JSON is plain `E2E-regression.json`. The JSON carries `schemaVersion` and `reporterVersion`; build dashboards on that contract.
 
@@ -96,20 +98,26 @@ Every option is optional.
 | Option | Default | What it does |
 | --- | --- | --- |
 | `projectName` | `package.json` name | Shown in the header. |
-| `reportName` | none | Suite label next to the project name. Also the file name. |
+| `reportName` | none | Suite label next to the project name. Also the file name, unless `fileName` is set. |
+| `fileName` | `reportName` | Base of the file names, such as `'Release 42 Chrome'`, so `reportName` can stay a short label. |
 | `teamName` | none | Your team's name, shown in the header and the page title. |
 | `showTeamName` | `true` | Set to `false` to hide the team name and keep it in your config. |
 | `timeZone` | the machine's zone | IANA name used for every time in the report, such as `America/New_York`. |
 | `theme` | `'auto'` | `'light'`, `'dark'` or `'auto'` to follow the reader's system. Readers can still switch it. |
+| `css` | none | CSS added after the built-in styles, so you can restyle the report. Kept in merged reports. |
 | `outputDir` | `'cypress/reports'` | Where the files are written. |
-| `outputs` | all four | Any of `'html'`, `'json'`, `'junit'`, `'markdown'`. |
+| `summaryDir` | `outputDir` | Where the `summary` output is written. |
+| `outputs` | `'html'`, `'json'`, `'junit'`, `'markdown'` | Any of those, plus `'summary'`. |
 | `history` | Azure DevOps, when a token is set | Run history settings. `{ provider: 'file' }` keeps history in a file, `false` turns it off. |
-| `reportUrl` | none (the run page on GitHub Actions) | Link the Markdown summary points to, such as your published pipeline artifact. |
-| `redact` | on | Masks secrets in every output. Add your own `patterns`, or set `false` to turn it off. |
+| `reportUrl` | none (the run page on GitHub Actions) | Link the Markdown summary points to, such as your published pipeline artifact. A `{file}` in it is replaced by the report's HTML file name. |
+| `remoteLanes` | none | Builds a lanes report at the end of each lane from the other lanes' summaries in an Azure Blob Storage folder. See [Remote lanes](docs/options.md#remote-lanes). |
+| `redact` | on | Masks secrets in every output. Add your own `patterns`, keep query strings with `keepQuery: true`, or set `false` to turn it off. |
 | `includeTestCode` | `true` | Set to `false` to leave test code out of every output. |
 | `maxEmbedMb` | `150` | Cap on the screenshots and clips embedded in the report. |
 | `assets` | `'inline'` | `'folder'` writes screenshots and clips to a folder next to the report instead. |
 | `keepVideos` | `false` | Set to `true` to leave Cypress's own videos in place. |
+| `flakyWarnings` | `false` | Set to `true` to log a warning for each flaky test on Azure Pipelines and GitHub Actions. |
+| `failedRequestStatuses` | none | Status codes recorded as failed requests on top of 500 and up, such as `[401, 429]`. |
 
 A wrong value, such as an unknown output or time zone, stops the run with an error. An unknown option name prints a warning.
 
@@ -182,6 +190,10 @@ npx neo-reporter merge downloaded-reports --name "E2E regression"
 
 The merged report gets HTML and Markdown by default. It counts every run it finds and warns when the same spec, browser and testing type turn up twice, for example from an artifact downloaded twice. When machines ran different browsers, spec cards show which one.
 
+To combine separate pipeline lanes, such as one job per browser or target, give each lane its own `reportName` and turn on the `summary` output. Upload each lane's `<name>.<id>.summary.json`, download them into one folder and merge. When the merged files have more than one report name, the Markdown summary and the copied run summary get a Lanes table: failed, flaky, passed, total, pass rate and duration per lane, lanes with failures first. Shards of one lane add up to one row. When the merge loads no run history itself and every lane carries history of the same family, the merged report uses the lanes' history. A merged report built from summary files has no screenshots or videos.
+
+When your lanes upload their summaries to Azure Blob Storage, `remoteLanes` does this at the end of each lane: it reads the other lanes' summaries from the folder, writes `All-lanes.html`, and adds the lanes summary to the lane's own Markdown summary. [Azure DevOps](docs/azure-devops.md#4-combine-lanes-on-blob-storage-optional) shows the pipeline steps.
+
 With file history, pass `--history-file cypress/reports/neo-history.jsonl` to `merge` and leave the file provider off on the machines. Run `npx neo-reporter merge --help` for every flag.
 
 ## Quality gate and notifications
@@ -216,17 +228,17 @@ The report holds what the run captured, so share it the way you share test logs:
 
 - Error messages and stacks. A failed `cy.request` includes its request and response headers and bodies.
 - The code of failed tests, and the steps, goals and test context you log.
-- Failed requests (status 500 and up) and browser console errors.
+- Failed requests (status 500 and up, plus any `failedRequestStatuses`) and browser console errors.
 - The target URL, branch, commit and spec owners (git author names).
 - Screenshots and video of failed and flaky tests.
 
-By default `redact` replaces `Authorization`, `Cookie` and `Set-Cookie` values, bearer tokens, JWTs, passwords in URLs, values of JSON keys such as `password`, `secret`, `token` and `api_key`, and the URL parameters `token`, `access_token`, `sig`, `code`, `key` and `password` with `[redacted]`. It also drops the query string from request URLs. Screenshots and videos are never redacted. Details are in [docs/options.md](docs/options.md#redaction).
+By default `redact` replaces `Authorization`, `Cookie` and `Set-Cookie` values, bearer tokens, JWTs, passwords in URLs, values of JSON keys such as `password`, `secret`, `token` and `api_key`, and the URL parameters `token`, `access_token`, `sig`, `code`, `key` and `password` with `[redacted]`. It also drops the query string from request URLs, unless you set `keepQuery`. Screenshots and videos are never redacted. Details are in [docs/options.md](docs/options.md#redaction).
 
 The HTML makes no network requests, and its Content-Security-Policy blocks them. Copying an AI prompt is different: what you paste goes to that assistant's provider.
 
 ## Known limitations
 
-- Cypress keeps only one handler per `before:run`, `after:run` and `after:spec` event. If another plugin registers them after `neoReporter`, the report may not be written, and the run prints a warning that links here. Call the handlers from your own events instead:
+- Cypress keeps only one handler per `before:run`, `after:run` and `after:spec` event. If another plugin registers them after `neoReporter`, the report may not be written, and the run prints a warning that links here. `neoReporter` registers `after:spec` when `video` is on, and with `flakyWarnings: true` on Azure Pipelines and GitHub Actions. Call the handlers from your own events instead:
 
   ```ts
   import { createNeoReporter } from 'cypress-neo-reporter/plugin';
@@ -253,10 +265,11 @@ The HTML makes no network requests, and its Content-Security-Policy blocks them.
   Or wrap `on` with [cypress-on-fix](https://github.com/bahmutov/cypress-on-fix) (`const on = require('cypress-on-fix')(cypressOn)`), which lets every plugin keep its handlers.
 - Video clips need `video: true` and are only cut for failed or flaky tests. Videos of passing specs are deleted, and a failing spec's full video is replaced by its clips, so Cypress Cloud and CI artifact steps do not see them. Set `keepVideos: true` to keep Cypress's videos.
 - Per-test clips need ffprobe, which ships with Cypress 15.16 and later. On older versions the failing spec's full video is embedded instead.
-- Screenshots are matched to a test by the file name Cypress gives them by default. This includes screenshots taken in hooks, titles that Cypress cleans up (trailing dots and spaces, characters such as `: / ? " < > |` are removed) and long names that Cypress cuts at 254 bytes. A screenshot saved under a custom name, such as `cy.screenshot('cart')`, is not attached. A cut name that two failed or flaky tests share in their first ~250 bytes is attached to both.
+- Screenshots are matched to a test by the file name Cypress gives them by default. This includes screenshots taken in hooks, titles that Cypress cleans up (trailing dots and spaces, characters such as `: / ? " < > |` are removed) and long names that Cypress cuts at 254 bytes. A screenshot that your own `after:screenshot` handler renamed to the test title alone, such as `pays by card.png`, `pays by card -- before each hook.png` or `pays by card (failed) (attempt 2).png`, is attached when no other test that ran in that spec has the same title, or else when exactly one of those tests failed or was flaky. It is not attached when Cypress had already cut the original name. A test outside any `describe` has that renamed name as its own default name, so it keeps such a screenshot even when a test inside a `describe` with the same title failed. A hook screenshot whose default name leaves out inner `describe` titles, such as one from a hook outside every `describe`, goes to one test the same way. A screenshot saved under a custom name, such as `cy.screenshot('cart')`, is not attached. A cut name that two failed or flaky tests share in their first ~250 bytes is attached to both.
 - Failed requests are recorded from the browser's resource timing, which reports status codes in Chromium-based browsers only.
 - Tags come from titles only. The `{ tags }` config of @cypress/grep is not read yet.
 - Run history is not kept per browser.
+- With `remoteLanes`, each lane only sees the lanes that uploaded their summaries before it ended, and the last lane's lanes report wins. Lanes that finish at the same time can miss each other. Run `neo-reporter merge --azure-blob <folder> --run <name>` after the last lane to rebuild the full report.
 
 ## Troubleshooting
 

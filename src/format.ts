@@ -70,6 +70,10 @@ export function escapeXml(str: string): string {
   return str.replace(INVALID_XML_CHARS, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 }
 
+export function xmlCdata(text: string): string {
+  return `<![CDATA[${text.replace(INVALID_XML_CHARS, '').replace(/]]>/g, ']]]]><![CDATA[>')}]]>`;
+}
+
 export function firstLine(text?: string | null): string {
   return (
     (text ?? '')
@@ -80,6 +84,14 @@ export function firstLine(text?: string | null): string {
 }
 
 const FILENAME_UNSAFE_CHARS = /[/?<>\\:*|"]/g;
+
+export function reportFileBase(name: string): string {
+  return name.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'report';
+}
+
+export function reportHtmlFile(summary: { fileName?: string; suiteLabel?: string; projectName: string }): string {
+  return `${reportFileBase(summary.fileName || summary.suiteLabel || summary.projectName)}.html`;
+}
 
 export function toScreenshotSafeName(title: string): string {
   return title.replace(FILENAME_UNSAFE_CHARS, '').toLowerCase();

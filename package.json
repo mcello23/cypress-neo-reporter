@@ -1,6 +1,6 @@
 {
   "name": "cypress-neo-reporter",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "One HTML report for Cypress runs: failures grouped by cause, history from your CI and the evidence behind every failed test.",
   "keywords": [
     "cypress",

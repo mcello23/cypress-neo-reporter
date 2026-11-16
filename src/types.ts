@@ -1,10 +1,12 @@
 export const SPEC_OWNERS_FILE_NAME = 'spec-owners.json';
 export const DEFAULT_REPORTS_DIR = 'cypress/reports';
-export const REPORT_OUTPUTS = ['html', 'json', 'junit', 'markdown'] as const;
+export const REPORT_OUTPUTS = ['html', 'json', 'junit', 'markdown', 'summary'] as const;
+export const DEFAULT_OUTPUTS = ['html', 'json', 'junit', 'markdown'] as const;
 export const MERGE_OUTPUTS = ['html', 'markdown'] as const;
 export const REPORT_THEMES = ['auto', 'light', 'dark'] as const;
 export const SCHEMA_VERSION = 1;
 export const DEFAULT_MAX_EMBED_MB = 150;
+export const DEFAULT_LANES_REPORT_NAME = 'All lanes';
 
 export type ReportOutput = (typeof REPORT_OUTPUTS)[number];
 export type ReportTheme = (typeof REPORT_THEMES)[number];
@@ -12,23 +14,40 @@ export type ReportTheme = (typeof REPORT_THEMES)[number];
 export interface ReporterOptions {
   projectName?: string;
   reportName?: string;
+  fileName?: string;
   teamName?: string;
   showTeamName?: boolean;
   timeZone?: string;
   theme?: ReportTheme;
+  css?: string;
   outputDir?: string;
+  summaryDir?: string;
   outputs?: readonly ReportOutput[];
   history?: HistoryOptions | false;
   reportUrl?: string;
-  redact?: false | { patterns?: RegExp[]; replace?: (text: string) => string };
+  remoteLanes?: RemoteLanesOptions;
+  redact?: false | { patterns?: RegExp[]; replace?: (text: string) => string; keepQuery?: boolean };
   includeTestCode?: boolean;
   maxEmbedMb?: number;
   assets?: 'inline' | 'folder';
   historyLoader?: HistoryLoader | null;
 }
 
+export interface RemoteLanesOptions {
+  azureBlob: string;
+  sas?: string;
+  run?: string;
+  reportName?: string;
+  fileName?: string;
+  projectName?: string;
+  junit?: { path: string; testName?: string };
+  releaseStage?: string;
+}
+
 export interface NeoReporterOptions extends Omit<ReporterOptions, 'historyLoader'> {
   keepVideos?: boolean;
+  flakyWarnings?: boolean;
+  failedRequestStatuses?: number[];
 }
 
 export interface MergeOptions extends NeoReporterOptions {
@@ -168,12 +187,26 @@ export interface ReportSummary {
   passRate: number;
   specs: SpecData[];
   suiteLabel?: string;
+  fileName?: string;
   ci?: CiInfo;
   history?: RunHistory;
   teamName?: string;
   timeZone?: string;
   theme?: ReportTheme;
+  css?: string;
   mergedFrom?: number;
+  lanes?: LaneSummary[];
+}
+
+export interface LaneSummary {
+  label: string;
+  file: string;
+  failed: number;
+  flaky: number;
+  passed: number;
+  total: number;
+  passRate: number;
+  durationMs: number;
 }
 
 export interface HistoryOptions {

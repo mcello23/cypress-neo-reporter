@@ -1,12 +1,12 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join, relative, isAbsolute, basename } from 'node:path';
-import { readCiInfo, readSpecOwners, readSpecOwnersFile } from './ci';
+import { ownedSpecPath, readCiInfo, readSpecOwners, readSpecOwnersFile } from './ci';
 import { computePassRate, deriveSuiteLabel, machineTimeZone, stripAnsi, toSourceSpecPath } from './format';
 import { packageVersion } from './html/assets';
 import { SCHEMA_VERSION, type EmbeddedFile, type RecordedTestsMap, type ReporterOptions, type ReportSummary, type SpecData, type TestData } from './types';
 import { recordedSpecVideos, testVideoPath } from './video';
 
-function toTestState(test: CypressCommandLine.TestResult): TestData['state'] {
+export function toTestState(test: CypressCommandLine.TestResult): TestData['state'] {
   const state = (test.state as TestData['state']) || 'passed';
   return state === 'passed' && test.attempts?.some(attempt => attempt.state === 'failed') ? 'flaky' : state;
 }
@@ -72,20 +72,55 @@ function toScreenshotTitle(title: string): string {
     .replace(/[. ]+$/, '');
 }
 
-function isTestScreenshot(shotPath: string, title: string[], failed: boolean): boolean {
+function testScreenshotMatch(shotPath: string, title: string[], failed: boolean): 'test' | 'hook' | undefined {
   const name = basename(shotPath);
   const leaf = toScreenshotTitle(title[title.length - 1]);
   const suites = title.slice(0, -1).filter(Boolean).map(toScreenshotTitle);
   for (let depth = suites.length; depth >= 0; depth--) {
     const testName = [...suites.slice(0, depth), leaf].join(' -- ');
     const match = name.startsWith(testName) ? SCREENSHOT_SUFFIX.exec(name.slice(testName.length)) : null;
-    if (match && (depth === suites.length || match[1]) && (failed || !match[2])) return true;
+    if (match && (depth === suites.length || match[1]) && (failed || !match[2])) return depth === suites.length ? 'test' : 'hook';
   }
-  if (!failed || Buffer.byteLength(name) < CUT_SCREENSHOT_NAME_BYTES) return false;
+  if (!failed || Buffer.byteLength(name) < CUT_SCREENSHOT_NAME_BYTES) return undefined;
   const testName = [...suites, leaf].join(' -- ');
   const cut = name.replace(/( \(\d+\))?\.png$/, '').replace(/\uFFFD+$/, '');
   const rest = cut.slice(testName.length);
-  return testName.startsWith(cut) || (cut.startsWith(testName) && CUT_SUFFIX_STARTS.some(start => start.startsWith(rest) || rest.startsWith(start)));
+  return testName.startsWith(cut) || (cut.startsWith(testName) && CUT_SUFFIX_STARTS.some(start => start.startsWith(rest) || rest.startsWith(start)))
+    ? 'test'
+    : undefined;
+}
+
+function leafScreenshotLength(name: string, title: string[], failed: boolean): number {
+  const leaf = toScreenshotTitle(title[title.length - 1]);
+  const match = leaf && name.startsWith(leaf) ? SCREENSHOT_SUFFIX.exec(name.slice(leaf.length)) : null;
+  return match && (failed || !match[2]) ? leaf.length : 0;
+}
+
+function testScreenshotPaths(
+  shots: CypressCommandLine.ScreenshotInformation[],
+  tests: CypressCommandLine.TestResult[],
+  states: TestData['state'][],
+  projectDir: string
+): string[][] {
+  const paths = shots.map(shot => toProjectPath(shot.path, projectDir));
+  const failed = states.map(state => state === 'failed' || state === 'flaky');
+  const ran = states.map(state => state !== 'pending' && state !== 'skipped');
+  const matches = tests.map((test, index) => paths.map(shotPath => testScreenshotMatch(shotPath, test.title, failed[index])));
+  const owned = matches.map(row => new Set(paths.filter((_, shotIndex) => row[shotIndex] === 'test')));
+  const claimed = new Set(owned.flatMap(set => [...set]));
+  shots.forEach((shot, shotIndex) => {
+    const shotPath = paths[shotIndex];
+    const hookOwners = matches.flatMap((row, index) => (ran[index] && row[shotIndex] === 'hook' ? [index] : []));
+    const leafOwners = () => {
+      const lengths = tests.map((test, index) => (ran[index] ? leafScreenshotLength(basename(shotPath), test.title, failed[index]) : 0));
+      const longest = Math.max(...lengths);
+      return lengths.flatMap((length, index) => (length > 0 && length === longest ? [index] : []));
+    };
+    const owners = hookOwners.length > 0 || shot.name || claimed.has(shotPath) ? hookOwners : leafOwners();
+    const chosen = owners.length > 1 ? owners.filter(index => failed[index]) : owners;
+    if (chosen.length === 1) owned[chosen[0]].add(shotPath);
+  });
+  return owned.map(set => [...new Set(paths.filter(shotPath => set.has(shotPath)))]);
 }
 
 /**
@@ -105,16 +140,15 @@ export function buildReportSummary(
     const specName = toSourceSpecPath(run.spec.name);
 
     const specVideoPath = recordedSpecVideos.get(run.spec.absolute) ?? run.video;
-    const tests: TestData[] = run.tests.map(t => {
+    const states = run.tests.map(test => toTestState(test));
+    const shotsByTest = testScreenshotPaths(run.screenshots ?? [], run.tests, states, projectDir);
+    const tests: TestData[] = run.tests.map((t, index) => {
       const fullTitle = t.title.join(' › ');
       const recorded = recordedTests.get(recordedTestKey(relPath, fullTitle));
       const displayError = recorded?.firstError ?? t.displayError;
 
-      const state = toTestState(t);
-      const testScreenshots = (run.screenshots ?? [])
-        .map(shot => toProjectPath(shot.path, projectDir))
-        .filter(shotPath => isTestScreenshot(shotPath, t.title, state === 'failed' || state === 'flaky'))
-        .map(mediaFile);
+      const state = states[index];
+      const testScreenshots = shotsByTest[index].map(mediaFile);
       const clipPath =
         specVideoPath && (state === 'failed' || state === 'flaky')
           ? testVideoPath(toProjectPath(specVideoPath, projectDir), t.title)
@@ -174,7 +208,7 @@ export function buildReportSummary(
       projectDir,
       specs.map(spec => spec.specFile)
     );
-  specs.forEach(spec => (spec.owner = owners.get(spec.specFile)));
+  specs.forEach(spec => (spec.owner = owners.get(ownedSpecPath(owners, spec.specFile))));
 
   const passRate = computePassRate(runResults.totalPassed || 0, runResults.totalTests || 0);
   const runConfig = runResults.config;
@@ -197,9 +231,11 @@ export function buildReportSummary(
     passRate,
     specs,
     suiteLabel: deriveSuiteLabel(options.reportName),
+    fileName: options.fileName,
     ci: readCiInfo(projectDir),
     teamName: options.showTeamName === false ? undefined : options.teamName?.trim() || undefined,
     timeZone: options.timeZone ?? machineTimeZone(),
-    theme: options.theme ?? 'auto'
+    theme: options.theme ?? 'auto',
+    css: options.css || undefined
   };
 }

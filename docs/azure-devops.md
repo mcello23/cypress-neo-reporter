@@ -66,6 +66,72 @@ Let the Cypress step finish with `continueOnError: true`, keep the publish steps
 
 The glob matches the one run JSON on a clean agent. `--fail-on new` needs the history from step 1. Secret variables are not passed to scripts unless you map them through `env`, as above. In parallel jobs the run JSON's `<id>` is built from `System.JobPositionInPhase` instead of the spec files, so each job slot keeps one file name across re-runs. For parallel jobs, merge first and pass the same flags to `neo-reporter merge`, so the gate and the post run once. Flags and exit codes are in [options.md](options.md#cli).
 
+## 4. Combine lanes on Blob Storage (optional)
+
+When lanes run in separate jobs or stages, such as one per browser or target, each lane can show every lane. Each lane uploads its summary to one Azure Blob Storage folder per run. At the end of each lane, the reporter reads the summaries already there and writes `All-lanes.html` with a Lanes table. Every option is in [Remote lanes](options.md#remote-lanes).
+
+Give each lane its own `reportName` and point every lane at the same folder. `<run>` is a folder that every lane of one run shares, such as the build or release id:
+
+```ts
+const folder = 'https://<account>.blob.core.windows.net/<container>/runs/<run>';
+
+return neoReporter(on, config, {
+  reportName: 'Chrome',
+  outputDir: 'cypress/results/reports',
+  summaryDir: 'cypress/results/summaries',
+  reportUrl: `${folder}/reports/{file}?<read SAS>`,
+  remoteLanes: {
+    azureBlob: `${folder}/summaries/`,
+    junit: { path: 'cypress/results/all-lanes.junit.xml' },
+  },
+});
+```
+
+`{file}` becomes each report's file name, so the lane's summary links its own report, the lanes summary links `All-lanes.html`, and each Lanes table row links its lane's report. The SAS in `reportUrl` ends up in the Markdown summary, so use a read-only SAS there.
+
+In a classic release pipeline, add `releaseStage: '<stage>'` to `remoteLanes`, naming the stage that publishes the JUnit file, and the lanes summary links to that stage's Tests tab. The job's token needs permission to view releases. YAML pipelines have no release stages, so leave it out there, as in the example.
+
+```yaml
+steps:
+  - script: npx cypress run
+    displayName: Run Cypress
+    env:
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+      NEO_BLOB_SAS: $(ReportsReadSas)
+
+  - task: AzureCLI@2
+    displayName: Upload reports and summaries
+    condition: always()
+    inputs:
+      azureSubscription: <your service connection>
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: >
+        az storage blob upload-batch --auth-mode login --overwrite
+        --account-name <account> --destination <container>
+        --destination-path runs/<run> --source cypress/results
+
+  - task: PublishTestResults@2
+    displayName: Publish the lanes report
+    condition: always()
+    inputs:
+      testResultsFormat: JUnit
+      testResultsFiles: cypress/results/all-lanes.junit.xml
+      testRunTitle: All lanes
+```
+
+- `NEO_BLOB_SAS` only needs read and list permissions (`sp=rl`). The upload step uses its own credential with write access, here a service connection, and runs even when tests fail.
+- The JUnit file holds one passed test that carries the lanes summary and attaches `All-lanes.html`. The attachment path is relative to the JUnit file, so publish it from where the lane wrote it.
+- Publish it in its own task with its own `testRunTitle`, apart from the lane's JUnit file from step 2. With this `outputDir`, that file and the lane's report are in `cypress/results/reports`, so point step 2's `testResultsFiles` at `cypress/results/reports/*.junit.xml` and its artifact at `cypress/results/reports`.
+- The run's summary tab shows one summary per task. The lane attaches one: its own summary, then the lanes summary after a horizontal rule, also when it is the first lane to finish. When the lanes report is skipped, for example without `NEO_BLOB_SAS`, it attaches its own summary alone.
+- Each lane only sees the lanes that uploaded before it ended. To rebuild the full report after the last lane, or on your machine:
+
+```bash
+NEO_BLOB_SAS='<read SAS>' npx neo-reporter merge --azure-blob https://<account>.blob.core.windows.net/<container>/runs/<run>/summaries/ --run "<release>"
+```
+
+`--run` takes the release name of a classic release, or the build number (`Build.BuildNumber`) of a YAML pipeline.
+
 ## How history finds earlier runs
 
 1. It lists the automated test runs of the last two weeks, from the same pipeline when the agent says which one, and from the same branch when there are any.

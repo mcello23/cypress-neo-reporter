@@ -1,17 +1,14 @@
 import { copyFileSync, writeFileSync, mkdirSync, rmSync, statSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { join, isAbsolute, basename } from 'node:path';
-import { toEmbeddedFile } from './format';
-import { attachRunHistory, createHistoryLoader } from './history';
+import { join, isAbsolute, basename, dirname } from 'node:path';
+import { reportFileBase, toEmbeddedFile } from './format';
 import { generateHtmlReport } from './html';
 import { generateJUnitXml } from './junit';
-import { writeMarkdownSummary } from './markdown';
-import { applyRedaction } from './redact';
-import { buildReportSummary, evidenceFiles, stripEmbed } from './summary';
+import { writeMarkdownSummary, type MarkdownExtras } from './markdown';
+import { evidenceFiles, stripEmbed } from './summary';
 import {
   DEFAULT_MAX_EMBED_MB,
   DEFAULT_REPORTS_DIR,
-  REPORT_OUTPUTS,
   type ReporterOptions,
   type ReportOutput,
   type ReportSummary,
@@ -60,6 +57,22 @@ function writeReportFile(filePath: string, summary: ReportSummary, render: (summ
       console.warn(`[neo-reporter] Writing ${basename(filePath)} (${label}) failed: ${error}`);
     }
   }
+}
+
+export function toSlimSummary(summary: ReportSummary): ReportSummary {
+  return {
+    ...summary,
+    specs: summary.specs.map(spec => ({
+      ...spec,
+      video: undefined,
+      tests: spec.tests.map(test => ({
+        ...test,
+        screenshots: undefined,
+        video: undefined,
+        ...(test.state === 'passed' ? { steps: undefined, code: undefined } : {})
+      }))
+    }))
+  };
 }
 
 function embedEvidence(specs: SpecData[], maxEmbedMb = DEFAULT_MAX_EMBED_MB): void {
@@ -114,17 +127,18 @@ export interface ReportFiles {
   json?: string;
   junit?: string;
   markdown?: string;
+  summary?: string;
 }
 
-export function reportFileBase(name: string): string {
-  return name.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'report';
+export function runFileBase(summary: ReportSummary, baseName: string): string {
+  return summary.mergedFrom ? reportFileBase(baseName) : `${reportFileBase(baseName)}.${shardId(summary)}`;
 }
 
 export function needsHistory(outputs: readonly ReportOutput[]): boolean {
   return outputs.includes('html') || outputs.includes('markdown');
 }
 
-function resolveOutputDir(projectDir: string, outputDir = DEFAULT_REPORTS_DIR): string {
+export function resolveOutputDir(projectDir: string, outputDir = DEFAULT_REPORTS_DIR): string {
   return isAbsolute(outputDir) ? outputDir : join(projectDir, outputDir);
 }
 
@@ -133,11 +147,11 @@ export function writeReportOutputs(
   outputDir: string,
   baseName: string,
   outputs: readonly ReportOutput[],
-  options: Pick<ReporterOptions, 'reportUrl' | 'assets' | 'maxEmbedMb'> = {}
+  options: Pick<ReporterOptions, 'reportUrl' | 'assets' | 'maxEmbedMb' | 'summaryDir'> & { markdown?: MarkdownExtras } = {}
 ): ReportFiles {
   mkdirSync(outputDir, { recursive: true });
   const base = join(outputDir, reportFileBase(baseName));
-  const jsonBase = summary.mergedFrom ? base : `${base}.${shardId(summary)}`;
+  const jsonBase = join(outputDir, runFileBase(summary, baseName));
   if (outputs.includes('html') || outputs.includes('json')) {
     if (options.assets === 'folder') copyEvidence(summary.specs, outputDir, `${basename(jsonBase)}-assets`);
     else embedEvidence(summary.specs, options.maxEmbedMb);
@@ -153,26 +167,17 @@ export function writeReportOutputs(
     }
   };
   write('json', `${jsonBase}.json`, file => writeReportFile(file, summary, s => JSON.stringify(s, null, 2)));
+  write('summary', join(options.summaryDir ?? outputDir, `${runFileBase(summary, baseName)}.summary.json`), file => {
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, JSON.stringify(toSlimSummary(summary)), 'utf-8');
+  });
   write('junit', `${base}.junit.xml`, file => writeFileSync(file, generateJUnitXml(summary), 'utf-8'));
   write('html', `${base}.html`, file => writeReportFile(file, summary, generateHtmlReport));
-  write('markdown', `${base}.summary.md`, file => writeMarkdownSummary(file, summary, options.reportUrl));
+  write('markdown', `${base}.summary.md`, file => writeMarkdownSummary(file, summary, options.reportUrl, options.markdown));
   Object.values(files).forEach(file => {
     const size = statSync(file).size;
     console.log(`[neo-reporter] Wrote ${file} (${size < MB ? `${Math.ceil(size / 1024)} KB` : `${(size / MB).toFixed(1)} MB`})`);
   });
   if (Object.keys(files).length === 0) console.warn(`[neo-reporter] No report file written to ${outputDir}.`);
   return files;
-}
-
-export async function generateReports(runResults: CypressCommandLine.CypressRunResult, options: ReporterOptions = {}): Promise<ReportFiles> {
-  const projectDir = (runResults.config as { projectRoot?: string } | undefined)?.projectRoot ?? process.cwd();
-  const outputDir = resolveOutputDir(projectDir, options.outputDir);
-  const outputs = options.outputs ?? REPORT_OUTPUTS;
-  const summary = applyRedaction(buildReportSummary(runResults, projectDir, { ...options, outputDir }), options);
-  if (needsHistory(outputs)) {
-    const loader =
-      options.historyLoader === undefined ? createHistoryLoader(options.history, summary.ci?.branch, projectDir) : options.historyLoader;
-    await attachRunHistory(summary, loader);
-  }
-  return writeReportOutputs(summary, outputDir, options.reportName ?? summary.projectName, outputs, options);
 }

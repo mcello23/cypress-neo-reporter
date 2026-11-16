@@ -866,6 +866,7 @@ export function generateHtmlReport(summary: ReportSummary): string {
 ${REPORT_CSS}
   </style>
   ${plyrAssets ? `<style>${plyrAssets.css}</style>` : ''}
+  ${summary.css ? `<style>${summary.css.replace(/<\/(style)/gi, '<\\/$1')}</style>` : ''}
 </head>
 <body>
   ${plyrAssets ? `<div hidden>${plyrAssets.sprite}</div>` : ''}

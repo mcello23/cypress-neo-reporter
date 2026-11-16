@@ -1,12 +1,33 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
+import { toSourceSpecPath } from './format';
 import { SPEC_OWNERS_FILE_NAME, type CiInfo } from './types';
 
 function readGit(projectDir: string, args: string[]): string | undefined {
   const result = spawnSync('git', args, { cwd: projectDir, encoding: 'utf-8', timeout: 5000 });
   const output = result.status === 0 ? result.stdout.trim() : '';
   return output && output !== 'HEAD' ? output : undefined;
+}
+
+const escapeGithubData = (text: string) => text.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+const escapeGithubProperty = (text: string) => escapeGithubData(text).replace(/:/g, '%3A').replace(/,/g, '%2C');
+const escapeAzureData = (text: string) => text.replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+const escapeAzureProperty = (text: string) => escapeAzureData(text).replace(/;/g, '%3B').replace(/]/g, '%5D');
+
+export function supportsFlakyWarnings(): boolean {
+  return Boolean(process.env.GITHUB_ACTIONS || process.env.TF_BUILD);
+}
+
+export function flakyTestWarnings(specPath: string, titles: string[][]): string[] {
+  if (!supportsFlakyWarnings()) return [];
+  const file = toSourceSpecPath(specPath);
+  return titles.map(title => {
+    const message = `FLAKY ${title.join(' › ')}`;
+    return process.env.GITHUB_ACTIONS
+      ? `::warning file=${escapeGithubProperty(file)}::${escapeGithubData(message)}`
+      : `##vso[task.logissue type=warning;sourcepath=${escapeAzureProperty(file)}]${escapeAzureData(message)}`;
+  });
 }
 
 export function adoCollectionUrl(): string | undefined {
@@ -87,6 +108,24 @@ export function readSpecOwners(projectDir: string, specFiles: string[]): Map<str
     owners.set(file, [...authors].sort((a, b) => b[1] - a[1])[0][0]);
   }
   return owners;
+}
+
+export function gitSpecOwners(projectDir: string, pathspecs: string[]): Map<string, string> {
+  const shallow = readGit(projectDir, ['rev-parse', '--is-shallow-repository']);
+  if (shallow === undefined) throw new Error('Not a git repository, or git is not installed.');
+  if (shallow !== 'false') throw new Error('The checkout is shallow, so the commit history is missing. Fetch the full history first, for example with git fetch --unshallow.');
+  const specFiles = (readGit(projectDir, ['ls-files', '--', ...pathspecs]) ?? '').split('\n').filter(Boolean);
+  if (specFiles.length === 0) throw new Error(`No tracked file matches ${pathspecs.join(' ')}.`);
+  const owners = readSpecOwners(projectDir, specFiles);
+  if (owners.size === 0) throw new Error('git log returned no authors for the spec files.');
+  return owners;
+}
+
+const TYPESCRIPT_SOURCES: Record<string, string> = { '.js': '.ts', '.jsx': '.tsx', '.mjs': '.mts', '.cjs': '.cts' };
+
+export function ownedSpecPath(owners: Map<string, string> | null, specFile: string): string {
+  const source = specFile.replace(/\.[mc]?jsx?$/, extension => TYPESCRIPT_SOURCES[extension] ?? extension);
+  return owners && !owners.has(specFile) && owners.has(source) ? source : specFile;
 }
 
 export function readSpecOwnersFile(projectDir: string): Map<string, string> | null {

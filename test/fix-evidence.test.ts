@@ -17,7 +17,7 @@ function cypressTest(title: string[], ...attempts: string[]) {
   return { title, state, duration: 1000, attempts: attempts.map(attempt => ({ state: attempt })), displayError: null };
 }
 
-function shotsOf(tests: ReturnType<typeof cypressTest>[], screenshots: string[]): Record<string, string[]> {
+function shotsOf(tests: ReturnType<typeof cypressTest>[], screenshots: string[], customNames: string[] = []): Record<string, string[]> {
   const projectRoot = tempDir();
   const summary = buildReportSummary(
     {
@@ -29,7 +29,10 @@ function shotsOf(tests: ReturnType<typeof cypressTest>[], screenshots: string[])
         {
           spec: { absolute: join(projectRoot, 'cypress/e2e/spec.cy.js'), relative: 'cypress/e2e/spec.cy.js', name: 'spec.cy.js' },
           stats: { tests: tests.length },
-          screenshots: screenshots.map(name => ({ path: join(projectRoot, 'cypress/screenshots/spec.cy.js', name) })),
+          screenshots: screenshots.map(name => ({
+            path: join(projectRoot, 'cypress/screenshots/spec.cy.js', name),
+            name: customNames.includes(name) ? name.replace(/\.png$/, '') : null
+          })),
           video: null,
           tests
         }
@@ -164,6 +167,147 @@ test('screenshots whose names Cypress cut short still reach their test', () => {
     [long, midChar, shorter, 'Emoji -- plain (failed).png']
   );
   assert.deepEqual(Object.values(shots), [[long], [], [midChar], [shorter], ['Emoji -- plain (failed).png']]);
+});
+
+test('screenshots renamed to the test title reach their test inside a describe', () => {
+  const shots = shotsOf(
+    [
+      cypressTest(['Checkout', 'Card', 'pays by card'], 'failed'),
+      cypressTest(['Checkout', 'Card', 'retries the payment'], 'failed', 'failed'),
+      cypressTest(['Login', 'signs in'], 'failed', 'passed'),
+      cypressTest(['Cart', 'loads'], 'passed'),
+      cypressTest(['Hooks', 'opens the page'], 'failed'),
+      cypressTest(['Default', 'keeps its name'], 'failed')
+    ],
+    [
+      'pays by card.png',
+      'retries the payment.png',
+      'retries the payment (failed) (attempt 2).png',
+      'signs in.png',
+      'loads.png',
+      'opens the page -- before each hook.png',
+      'Default -- keeps its name (failed).png',
+      'pays by card (1).png'
+    ]
+  );
+  assert.deepEqual(shots, {
+    'Checkout › Card › pays by card': ['pays by card.png', 'pays by card (1).png'],
+    'Checkout › Card › retries the payment': ['retries the payment.png', 'retries the payment (failed) (attempt 2).png'],
+    'Login › signs in': ['signs in.png'],
+    'Cart › loads': ['loads.png'],
+    'Hooks › opens the page': ['opens the page -- before each hook.png'],
+    'Default › keeps its name': ['Default -- keeps its name (failed).png']
+  });
+});
+
+test('a renamed screenshot never goes to a test whose title only starts the same, that did not run, or that passed while the name says failed', () => {
+  const shots = shotsOf(
+    [
+      cypressTest(['Cart', 'loads'], 'passed'),
+      cypressTest(['Cart', 'loads the cart'], 'failed'),
+      cypressTest(['Suffix', 'retries'], 'passed'),
+      cypressTest(['Suffix', 'retries (2)'], 'failed'),
+      cypressTest(['Skipped', 'pays'], 'skipped'),
+      cypressTest(['Pending', 'pays'], 'pending'),
+      cypressTest(['Ran', 'pays'], 'failed')
+    ],
+    ['loads the cart.png', 'loads (failed) (attempt 2).png', 'retries (2).png', 'pays.png']
+  );
+  assert.deepEqual(shots, {
+    'Cart › loads': [],
+    'Cart › loads the cart': ['loads the cart.png'],
+    'Suffix › retries': [],
+    'Suffix › retries (2)': ['retries (2).png'],
+    'Skipped › pays': [],
+    'Pending › pays': [],
+    'Ran › pays': ['pays.png']
+  });
+});
+
+test('a renamed screenshot that more than one test could own goes to none, and a file listed twice is attached once', () => {
+  const shots = shotsOf(
+    [
+      cypressTest(['Admin', 'case 1'], 'failed'),
+      cypressTest(['Shop', 'case 1'], 'failed'),
+      cypressTest(['Shop', 'case 2'], 'failed'),
+      cypressTest(['Dirty', 'a/b'], 'failed'),
+      cypressTest(['Dirty', 'ab'], 'failed')
+    ],
+    ['case 1.png', 'case 1.png', 'case 2.png', 'case 2.png', 'ab.png']
+  );
+  assert.deepEqual(shots, {
+    'Admin › case 1': [],
+    'Shop › case 1': [],
+    'Shop › case 2': ['case 2.png'],
+    'Dirty › a/b': [],
+    'Dirty › ab': []
+  });
+});
+
+test('a renamed screenshot that several tests could own goes to the only one that failed or was flaky', () => {
+  const shots = shotsOf(
+    [
+      cypressTest(['Admin', 'opens the settings'], 'failed', 'failed'),
+      cypressTest(['Viewer', 'opens the settings'], 'passed'),
+      cypressTest(['Primary', 'loads the cube'], 'failed', 'passed'),
+      cypressTest(['Secondary', 'loads the cube'], 'passed'),
+      cypressTest(['Dirty', 'a/b'], 'failed'),
+      cypressTest(['Dirty', 'ab'], 'passed')
+    ],
+    ['opens the settings.png', 'opens the settings (failed) (attempt 2).png', 'loads the cube.png', 'ab.png']
+  );
+  assert.deepEqual(shots, {
+    'Admin › opens the settings': ['opens the settings.png', 'opens the settings (failed) (attempt 2).png'],
+    'Viewer › opens the settings': [],
+    'Primary › loads the cube': ['loads the cube.png'],
+    'Secondary › loads the cube': [],
+    'Dirty › a/b': ['ab.png'],
+    'Dirty › ab': []
+  });
+});
+
+test('a hook screenshot named without the inner describe titles goes to one test that ran, preferring a failed one', () => {
+  const shots = shotsOf(
+    [
+      cypressTest(['Admin', 'case 1'], 'failed'),
+      cypressTest(['Shop', 'case 1'], 'passed'),
+      cypressTest(['Editor', 'exports the grid'], 'failed', 'failed'),
+      cypressTest(['Reader', 'exports the grid'], 'passed'),
+      cypressTest(['Left', 'case 2'], 'failed'),
+      cypressTest(['Right', 'case 2'], 'failed'),
+      cypressTest(['Skipped', 'case 3'], 'skipped'),
+      cypressTest(['Ran', 'case 3'], 'passed')
+    ],
+    [
+      'case 1 -- before each hook.png',
+      'exports the grid -- before each hook.png',
+      'exports the grid -- before each hook (failed) (attempt 2).png',
+      'case 2 -- before each hook (failed).png',
+      'case 3 -- before each hook.png'
+    ]
+  );
+  assert.deepEqual(shots, {
+    'Admin › case 1': ['case 1 -- before each hook.png'],
+    'Shop › case 1': [],
+    'Editor › exports the grid': ['exports the grid -- before each hook.png', 'exports the grid -- before each hook (failed) (attempt 2).png'],
+    'Reader › exports the grid': [],
+    'Left › case 2': [],
+    'Right › case 2': [],
+    'Skipped › case 3': [],
+    'Ran › case 3': ['case 3 -- before each hook.png']
+  });
+});
+
+test('screenshots saved under a custom name stay unattached even when the name is a test title', () => {
+  const shots = shotsOf(
+    [cypressTest(['Cart', 'checkout'], 'failed'), cypressTest(['Cart', 'cart'], 'passed')],
+    ['Cart -- checkout (failed).png', 'cart.png'],
+    ['cart.png']
+  );
+  assert.deepEqual(shots, {
+    'Cart › checkout': ['Cart -- checkout (failed).png'],
+    'Cart › cart': []
+  });
 });
 
 test('clip file names stay short in bytes, not only in characters', () => {

@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### Features
+
+- A `summary` output, off by default, writes `<name>.<id>.summary.json`: the JSON without screenshots, videos, or steps and code of passed tests. `neo-reporter merge` reads it, and skips it when the full JSON sits next to it.
+- Merging reports with more than one report name adds a Lanes table to the Markdown summary and the copied run summary, and `lanes` to the JSON, with each lane's HTML file name in `file`. The header lists the target of every lane. When the merge loads no history itself and every lane has history of the same family, the merged report uses it.
+- Screenshots that an `after:screenshot` handler renamed to the test title alone, such as `pays by card.png`, are attached to that test when no other test that ran in the spec has that title, or when it is the only failed or flaky one with that title. A hook name, `(failed)`, `(attempt N)` and `(N)` after the title are understood, and a name that still says `(failed)` only goes to a failed or flaky test. Screenshots with a custom name stay unattached.
+- `flakyWarnings: true` logs a warning for each flaky test on Azure Pipelines and GitHub Actions, linked to its spec file. The plugin then registers `after:spec` there even with video off.
+- `redact: { keepQuery: true }` keeps the query string and fragment of failed-request URLs and the target URL. The values of parameters whose name ends like a secret, such as `refresh_token`, `api_key`, `client_secret` or `X-Amz-Signature`, stay masked. `neo-reporter merge --keep-query` does the same for a merge.
+- A `css` option adds your own styles after the built-in ones. It is kept in the JSON, so merged reports keep it.
+- `neo-reporter owners` writes `spec-owners.json` from the git history, for CI checkouts without it. A compiled `.js` spec takes the owner of its TypeScript source in that file, and its flaky-test warning links the source.
+- `summaryDir` writes the `summary` output to its own folder.
+- `remoteLanes` builds a lanes report at the end of each lane from the other lanes' summaries in an Azure Blob Storage folder: `All-lanes.html` and `All-lanes.summary.md` by default, an optional JUnit file with one passed test that carries the summary and attaches the HTML, and an optional link to the Tests tab of a classic release stage. The lane's Markdown summary ends with the lanes summary, from the first lane on, so the pipeline shows one summary. `remoteLanes.projectName` and `remoteLanes.fileName` give the lanes report the same title and file name whichever lane writes it. Attachment markers in test titles and errors are broken up, so the JUnit file attaches only the lanes report. A missing or expired SAS, a failed listing or a broken lane summary only warns.
+- A `{file}` in `reportUrl` is replaced by the report's HTML file name and links each Lanes table row to that lane's report.
+- `neo-reporter merge --azure-blob <url> --run <name>` and `mergeReports({ remoteLanes })` rebuild the lanes report from the folder, with the SAS from `NEO_BLOB_SAS`.
+- `fileName` sets the base of the file names apart from `reportName`, which stays the label. `neo-reporter merge --file-name` does the same for a merge.
+- `failedRequestStatuses` records more status codes as failed requests, such as `[401, 429]`, on top of 500 and up.
+- The `RemoteLanesOptions` and `LaneSummary` types are exported.
+
+### Fixes
+
+- A hook screenshot whose default name leaves out inner `describe` titles, such as one from a hook outside every `describe`, goes to one test only: the only test that ran with that title, else the only failed or flaky one. It no longer goes to every test with that title, passing ones included.
+
 ## 2.0.0
 
 ### Breaking changes

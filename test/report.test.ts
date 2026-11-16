@@ -4,9 +4,8 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync, mkdirSync } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { generateHtmlReport, generateJUnitXml, generateMarkdownSummary, generateReports, mergeReports } from '../src';
-import { assertTimeZone } from '../src/format';
+import { assertTimeZone, reportFileBase } from '../src/format';
 import { createHistoryLoader } from '../src/history';
-import { reportFileBase } from '../src/output';
 import { buildReportSummary } from '../src/summary';
 import { sampleSummary } from './fixtures/summary';
 

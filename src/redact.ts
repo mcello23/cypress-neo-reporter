@@ -12,6 +12,8 @@ const DEFAULT_PATTERNS = [
   /(?<=[?&#](?:token|access_token|sig|code|key|password)=)[^&#\s"'<>]+/gi
 ];
 
+const SECRET_QUERY_PARAMETER = /(?<=[?&#][\w.-]*?(?:token|key|secret|sig|signature|password|credential|session)=)[^&#\s"'<>]+/gi;
+
 export function applyRedaction(
   summary: ReportSummary,
   { redact = {}, includeTestCode = true }: Pick<ReporterOptions, 'redact' | 'includeTestCode'> = {}
@@ -24,7 +26,8 @@ export function applyRedaction(
     const masked = patterns.reduce((result, pattern) => result.replace(pattern, REDACTED), text);
     return redact && redact.replace ? redact.replace(masked) : masked;
   };
-  const cleanUrl = (url: string) => clean(redact ? url.split(/[?#]/)[0] : url);
+  const cleanUrl = (url: string) =>
+    clean(!redact ? url : redact.keepQuery ? url.replace(SECRET_QUERY_PARAMETER, REDACTED) : url.split(/[?#]/)[0]);
   const cleanTest = (test: TestData): TestData => ({
     ...test,
     displayError: test.displayError && clean(test.displayError),

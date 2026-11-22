@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.1
+
+### Docs
+
+- Added an interactive walkthrough GIF and dark-mode screenshots to `README.md` covering the overview, failure evidence & AI triage, owners/regressions/tags, gallery, and CI/Slack/gate outputs.
+- Switched README media embeds to absolute `raw.githubusercontent.com` URLs so all screenshots and the walkthrough GIF render on npmjs.com as well as GitHub.
+
 ## 2.1.0
 
 ### Features

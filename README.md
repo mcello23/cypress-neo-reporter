@@ -8,10 +8,13 @@ One HTML report for Cypress runs: failures grouped by cause, history from your C
 ![cypress 15 | 16](https://img.shields.io/badge/cypress-15%20%7C%2016-informational)
 ![node 20+](https://img.shields.io/badge/node-20%2B-informational)
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/report-dark.png">
-  <img alt="The report overview: pass rate, failure groups and run history" src="docs/assets/report-light.png">
-</picture>
+![The report overview: pass rate, failure groups, run history, new and fixed failures, and AI triage](https://raw.githubusercontent.com/mcello23/cypress-neo-reporter/main/docs/assets/report-dark.png)
+
+## Walkthrough
+
+Switch themes, drill from a failure group straight into phased steps and network diagnostics, copy an AI triage prompt, zoom failure screenshots in the gallery and filter with `tag:smoke`:
+
+![Interactive walkthrough of Cypress Neo Reporter: theme toggle, failure groups, phased steps, AI triage prompt copy, screenshot gallery lightbox and tag search](https://raw.githubusercontent.com/mcello23/cypress-neo-reporter/main/docs/assets/demo-walkthrough.gif)
 
 ## Features
 
@@ -27,6 +30,32 @@ One HTML report for Cypress runs: failures grouped by cause, history from your C
 - **Your time zone.** Every time in the report uses the zone you set with `timeZone`, not the CI machine's.
 - **Light and dark.** Follows the reader's system by default, with a switch in the header.
 - **One file.** No server and no external assets. Open it offline, attach it to a ticket, keep it as a build artifact. Parallel runs merge into one.
+
+## Screenshots
+
+### Failure evidence & AI triage
+
+Every failed or flaky test keeps its run-history strip, business objective, phased `cy.step` log (`VISIT`, `FIND`, `STEP`, `CHECK`), stack trace, failed requests with `[redacted]` secrets, console errors, per-test AI triage prompt, failure screenshot and embedded video clip.
+
+![Expanded failed test showing run history dots, business objective, phased execution steps, failed network requests with redacted tokens, AI triage prompt, screenshot and embedded video player](https://raw.githubusercontent.com/mcello23/cypress-neo-reporter/main/docs/assets/evidence-dark.png)
+
+### AI triage, owners, regressions & tags
+
+Copy a run-wide failure or flaky triage prompt in one click, see failures by spec owner, catch tests running slower than their historical baseline, break down results by `@tag` and inspect spec durations.
+
+![Insights panels showing AI failure and flaky triage prompts, spec owners, slowest tests, slower-than-usual duration regressions, tag counts and spec duration bars](https://raw.githubusercontent.com/mcello23/cypress-neo-reporter/main/docs/assets/insights-details-dark.png)
+
+### Screenshots & recordings gallery
+
+Browse every screenshot and video clip from failed and flaky tests in one view, with a click-to-zoom lightbox and direct jumps back to each test.
+
+![Gallery view listing failure and flaky screenshots alongside embedded test recordings](https://raw.githubusercontent.com/mcello23/cypress-neo-reporter/main/docs/assets/gallery-dark.png)
+
+### CI summary, chat alerts & quality gate
+
+Along with the HTML report, every run can publish a Markdown summary to GitHub Actions or Azure DevOps, send a digest to Slack or Microsoft Teams (`neo-reporter notify`), and enforce a pipeline quality gate (`neo-reporter gate`).
+
+![Mockup of GitHub Actions and Azure DevOps Markdown summary, Slack notification card, and neo-reporter gate CLI output](https://raw.githubusercontent.com/mcello23/cypress-neo-reporter/main/docs/assets/ci-notifications-dark.png)
 
 ## Requirements
 
